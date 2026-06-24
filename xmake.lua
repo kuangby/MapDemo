@@ -3,7 +3,7 @@ add_rules("mode.debug", "mode.release")
 add_repositories("levimc-repo https://github.com/LiteLDev/xmake-repo.git")
 
 option("target_type")
-    set_default("server")
+    set_default("client")
     set_showmenu(true)
     set_values("server", "client")
 option_end()
@@ -14,17 +14,22 @@ option_end()
 add_requires("levilamina", {configs = {target_type = get_config("target_type")}})
 
 add_requires("levibuildscript")
+add_requires("imgui", {configs = {shared = false, win32 = true, dx11 = true}})
+add_requires("nlohmann_json")
 
 if not has_config("vs_runtime") then
     set_runtimes("MD")
 end
 
-target("my-mod") -- Change this to your mod name.
+target("MapDemo") -- Change this to your mod name.
     add_rules("@levibuildscript/linkrule")
     add_rules("@levibuildscript/modpacker")
     add_cxflags( "/EHa", "/utf-8", "/W4", "/w44265", "/w44289", "/w44296", "/w45263", "/w44738", "/w45204")
     add_defines("NOMINMAX", "UNICODE")
-    add_packages("levilamina")
+    add_packages("levilamina", "imgui", "nlohmann_json")
+    add_syslinks("d3d11", "dxgi", "user32", "delayimp")
+    add_ldflags("/DELAYLOAD:dwmapi.dll", "/DELAYLOAD:imm32.dll", "/DELAYLOAD:LeviLamina.dll")
+    add_shflags("/DELAYLOAD:dwmapi.dll", "/DELAYLOAD:imm32.dll", "/DELAYLOAD:LeviLamina.dll")
     set_exceptions("none") -- To avoid conflicts with /EHa.
     set_kind("shared")
     set_languages("c++20")

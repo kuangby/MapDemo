@@ -107,6 +107,12 @@ BlockColor BlockColorManager::getBlockColor(const std::string& blockName) const 
 }
 
 BiomeColor BlockColorManager::getBiomeColor(const std::string& biomeName) const {
+    // 尝试去掉 "minecraft:" 前缀再查找
+    if (biomeName.rfind("minecraft:", 0) == 0) {
+        auto it2 = biomeColors_.find(biomeName.substr(10));
+        if (it2 != biomeColors_.end()) return it2->second;
+    }
+
     auto it = biomeColors_.find(biomeName);
     if (it != biomeColors_.end()) return it->second;
 

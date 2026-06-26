@@ -1,7 +1,12 @@
 #include "mod/MapDemo.h"
 
+#include "config/Config.h"
 #include "helper/HookRegistry.h"
 #include "ll/api/mod/RegisterHelper.h"
+#include "state/BlockColorManager.h"
+#include "state/TerrainScanner.h"
+
+#include <filesystem>
 
 namespace map_demo {
 
@@ -13,6 +18,22 @@ MapDemo& MapDemo::getInstance() {
 bool MapDemo::load() {
     getSelf().getLogger().setLevel(ll::io::LogLevel::Debug);
     getSelf().getLogger().debug("Loading...");
+
+    auto& cfg = config::getConfig();
+    auto  modDir = std::filesystem::path(getSelf().getModDir());
+    auto  blockColorPath = (modDir / cfg.terrain.blockColorPath).string();
+    auto  biomeColorPath = (modDir / cfg.terrain.biomeColorPath).string();
+
+    bool loaded = BlockColorManager::getInstance().loadFromFiles(blockColorPath, biomeColorPath);
+    getSelf().getLogger().debug("Block colors load result: {}", loaded);
+
+    if (cfg.terrain.enableDiskCache) {
+        auto cachePath = std::filesystem::path(getSelf().getDataDir()) / "terrain_cache";
+        std::filesystem::create_directories(cachePath);
+        bool cacheOk = TerrainScanner::getInstance().initializeDiskCache(cachePath);
+        getSelf().getLogger().debug("Terrain disk cache init result: {}", cacheOk);
+    }
+
     registerAllHooks();
     getSelf().getLogger().debug("Hooks registered");
     return true;
@@ -26,6 +47,7 @@ bool MapDemo::enable() {
 bool MapDemo::disable() {
     getSelf().getLogger().debug("Disabling...");
     unregisterAllHooks();
+    TerrainScanner::getInstance().shutdown();
     getSelf().getLogger().debug("Hooks unregistered");
     return true;
 }

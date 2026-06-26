@@ -1,5 +1,6 @@
 #include "helper/DX11Hook.h"
 
+#include "config/Config.h"
 #include "mod/MapDemo.h"
 #include "render/MiniMapRenderer.h"
 
@@ -57,7 +58,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
             io.Fonts->AddFontFromFileTTF(
                 "c:\\Windows\\Fonts\\msyh.ttc",
-                18.0f,
+                config::getConfig().fontSize,
                 NULL,
                 io.Fonts->GetGlyphRangesChineseFull()
             );
@@ -83,7 +84,6 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
 
                 ImGuiIO& io = ImGui::GetIO();
 
-                // 手动更新 DisplaySize
                 if (g_hWnd) {
                     RECT rect;
                     if (GetClientRect(g_hWnd, &rect)) {
@@ -94,7 +94,6 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
                     }
                 }
 
-                // 手动更新 DeltaTime
                 static auto s_lastFrameTime = std::chrono::steady_clock::now();
                 auto now = std::chrono::steady_clock::now();
                 float dt = std::chrono::duration<float>(now - s_lastFrameTime).count();

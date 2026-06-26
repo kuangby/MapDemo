@@ -1,0 +1,94 @@
+#include "state/MapCacheManager.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace map_demo {
+
+MapCacheManager& MapCacheManager::getInstance() {
+    static MapCacheManager instance;
+    return instance;
+}
+
+void MapCacheManager::clearAll() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    regions_.clear();
+}
+
+RegionPos MapCacheManager::worldToRegion(int worldX, int worldZ, int dim) {
+    constexpr int REGION_SIZE = RegionData::SIZE;
+    auto toBlockIndex = [](int v) {
+        return v < 0 ? ((v + 1) / REGION_SIZE) - 1 : v / REGION_SIZE;
+    };
+    return {toBlockIndex(worldX), toBlockIndex(worldZ), dim};
+}
+
+ChunkPos MapCacheManager::regionToMinChunk(const RegionPos& pos) {
+    return {pos.x * RegionData::CHUNKS, pos.z * RegionData::CHUNKS};
+}
+
+RegionData* MapCacheManager::getRegion(int regionX, int regionZ, int dim) {
+    return getRegion({regionX, regionZ, dim});
+}
+
+RegionData* MapCacheManager::getRegion(const RegionPos& pos) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = regions_.find(pos);
+    if (it != regions_.end()) return it->second.get();
+    auto [newIt, inserted] = regions_.emplace(pos, std::make_unique<RegionData>());
+    return newIt->second.get();
+}
+
+void MapCacheManager::updateBlock(int worldX, int worldZ, int dim, BlockColor color) {
+    auto pos   = worldToRegion(worldX, worldZ, dim);
+    auto* data = getRegion(pos);
+
+    constexpr int REGION_SIZE = RegionData::SIZE;
+    int localX = worldX - (pos.x * REGION_SIZE);
+    int localZ = worldZ - (pos.z * REGION_SIZE);
+    if (localX < 0) localX += REGION_SIZE;
+    if (localZ < 0) localZ += REGION_SIZE;
+
+    localX = std::clamp(localX, 0, REGION_SIZE - 1);
+    localZ = std::clamp(localZ, 0, REGION_SIZE - 1);
+
+    data->setPixel(localX, localZ, color);
+    data->dirty = true;
+}
+
+void MapCacheManager::markDirty(int regionX, int regionZ, int dim) {
+    auto* data = getRegion(regionX, regionZ, dim);
+    if (data) data->dirty = true;
+}
+
+void MapCacheManager::evictRegion(int regionX, int regionZ, int dim) {
+    evictRegion({regionX, regionZ, dim});
+}
+
+void MapCacheManager::evictRegion(const RegionPos& pos) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    regions_.erase(pos);
+}
+
+void MapCacheManager::evictChunk(int chunkX, int chunkZ, int dim) {
+    auto pos = worldToRegion(chunkX * 16, chunkZ * 16, dim);
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = regions_.find(pos);
+    if (it == regions_.end()) return;
+
+    int regionMinChunkX = pos.x * RegionData::CHUNKS;
+    int regionMinChunkZ = pos.z * RegionData::CHUNKS;
+    int localChunkX     = chunkX - regionMinChunkX;
+    int localChunkZ     = chunkZ - regionMinChunkZ;
+    if (localChunkX < 0 || localChunkX >= RegionData::CHUNKS || localChunkZ < 0 || localChunkZ >= RegionData::CHUNKS) {
+        return;
+    }
+
+    it->second->clearChunk(localChunkX, localChunkZ);
+    if (it->second->isEmpty()) {
+        regions_.erase(it);
+    }
+}
+
+} // namespace map_demo

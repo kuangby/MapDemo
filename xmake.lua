@@ -37,6 +37,12 @@ target("MapDemo") -- Change this to your mod name.
     add_headerfiles("src/**.h")
     add_files("src/**.cpp")
     add_includedirs("src")
+    -- 打包颜色 JSON 文件到 mod 输出目录
+    after_build(function (target)
+        local moddir = path.join(os.projectdir(), "bin", "MapDemo", "resources", "colors")
+        os.mkdir(moddir)
+        os.cp("resources/colors/*.json", moddir)
+    end)
     if is_config("target_type", "server") then
     --  add_includedirs("src-server")
     --  add_files("src-server/**.cpp")

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <chrono>
 #include <cmath>
 
@@ -25,12 +24,18 @@ public:
     static MapState& getInstance();
 
     void updatePlayer(float x, float y, float z, float yaw);
+    void updatePlayer(float x, float y, float z, float yaw, int dimensionId);
     void updateSmoothCamera(float deltaTime);
+    void resetSmoothCamera(float x, float z, float yaw);
+    void clearPlayer();
 
     [[nodiscard]] const PlayerState& player() const { return player_; }
     [[nodiscard]] float              smoothX() const { return smoothX_; }
     [[nodiscard]] float              smoothZ() const { return smoothZ_; }
     [[nodiscard]] float              smoothYaw() const { return smoothYaw_; }
+    [[nodiscard]] int                dimensionId() const { return dimensionId_; }
+    [[nodiscard]] float              renderYawRad() const;
+
     [[nodiscard]] bool               hasPlayer() const { return player_.hasPlayer; }
 
     bool  showMiniMap{true};
@@ -40,16 +45,13 @@ private:
     MapState() = default;
 
     PlayerState player_;
+    int         dimensionId_{0};
 
     float smoothX_{0.0f};
     float smoothZ_{0.0f};
-    float smoothYaw_{0.0f};
+    float smoothYaw_{0.0f}; // 未环绕的连续 yaw，用于平滑
 
     std::chrono::steady_clock::time_point lastUpdate_{std::chrono::steady_clock::now()};
-
-    // 弹簧阻尼参数
-    static constexpr float kSpringStrength = 12.0f;
-    static constexpr float kDamping        = 8.0f;
 
     float velocityX_{0.0f};
     float velocityZ_{0.0f};

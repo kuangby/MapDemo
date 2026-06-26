@@ -101,6 +101,16 @@ struct TerrainConfig {
     // 是否启用磁盘缓存
     bool enableDiskCache = true;
 
+    // 是否启用透明水效果（类似 BedrockMap）
+    bool enableTransparentWater = true;
+
+    // 每个维度的 cameraHeight（Y 坐标）
+    struct {
+        int overworld = 320;  // 主世界
+        int nether    = 127;  // 地狱
+        int end       = 256;  // 末地
+    } cameraHeight;
+
     // 颜色 JSON 文件路径（相对于 mod 目录）
     const char* blockColorPath = "resources/colors/block_color.json";
     const char* biomeColorPath = "resources/colors/biome_color.json";

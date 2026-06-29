@@ -17,10 +17,9 @@ void MapCacheManager::clearAll() {
 
 RegionPos MapCacheManager::worldToRegion(int worldX, int worldZ, int dim) {
     constexpr int REGION_SIZE = RegionData::SIZE;
-    auto toBlockIndex = [](int v) {
-        return v < 0 ? ((v + 1) / REGION_SIZE) - 1 : v / REGION_SIZE;
-    };
-    return {toBlockIndex(worldX), toBlockIndex(worldZ), dim};
+    int regionX = worldX < 0 ? ((worldX + 1) / REGION_SIZE) - 1 : worldX / REGION_SIZE;
+    int regionZ = worldZ < 0 ? ((worldZ + 1) / REGION_SIZE) - 1 : worldZ / REGION_SIZE;
+    return {regionX, regionZ, dim};
 }
 
 ChunkPos MapCacheManager::regionToMinChunk(const RegionPos& pos) {

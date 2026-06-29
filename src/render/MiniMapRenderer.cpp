@@ -37,14 +37,14 @@ ImU32 toImCol32(std::uint32_t rgba) {
     return IM_COL32(r, g, b, a);
 }
 
+bool pointInCircle(const ImVec2& p, const ImVec2& center, float radius) {
+    float dx = p.x - center.x;
+    float dy = p.y - center.y;
+    return dx * dx + dy * dy <= radius * radius;
+}
+
 bool clipLineToCircle(const ImVec2& a, const ImVec2& b, const ImVec2& center, float radius, ImVec2& outA, ImVec2& outB) {
     float r2 = radius * radius;
-    auto inCircle = [&](const ImVec2& p) -> bool {
-        float dx = p.x - center.x;
-        float dy = p.y - center.y;
-        return dx * dx + dy * dy <= r2;
-    };
-
     ImVec2 d = ImVec2(b.x - a.x, b.y - a.y);
     ImVec2 f = ImVec2(a.x - center.x, a.y - center.y);
 
@@ -53,7 +53,7 @@ bool clipLineToCircle(const ImVec2& a, const ImVec2& b, const ImVec2& center, fl
     float C = f.x * f.x + f.y * f.y - r2;
 
     if (A < 0.0001f) {
-        if (inCircle(a)) {
+        if (pointInCircle(a, center, radius)) {
             outA = a;
             outB = b;
             return true;
@@ -63,7 +63,7 @@ bool clipLineToCircle(const ImVec2& a, const ImVec2& b, const ImVec2& center, fl
 
     float disc = B * B - 4.0f * A * C;
     if (disc < 0.0f) {
-        if (inCircle(a)) {
+        if (pointInCircle(a, center, radius)) {
             outA = a;
             outB = b;
             return true;

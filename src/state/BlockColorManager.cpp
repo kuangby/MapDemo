@@ -5,7 +5,6 @@
 #include <nlohmann/json.hpp>
 
 #include <fstream>
-#include <vector>
 
 namespace map_demo {
 
@@ -135,25 +134,30 @@ BlockColorManager::blendWithBiome(const std::string& blockName, BlockColor color
             + std::to_string(biome.rgb.b)
     );
 
-    auto applyTint = [](BlockColor base, BlockColor tint) {
-        return BlockColor{
-            static_cast<std::uint8_t>((base.r * tint.r) / 255),
-            static_cast<std::uint8_t>((base.g * tint.g) / 255),
-            static_cast<std::uint8_t>((base.b * tint.b) / 255),
-            base.a
-        };
-    };
-
     std::string lower;
     lower.reserve(blockName.size());
     for (char c : blockName) lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
+    BlockColor tint{};
+    bool       hasTint = false;
     if (lower.find("water") != std::string::npos && biome.hasWater) {
-        color = applyTint(color, biome.water);
+        tint    = biome.water;
+        hasTint = true;
     } else if (lower.find("leave") != std::string::npos && biome.hasLeaves) {
-        color = applyTint(color, biome.leaves);
+        tint    = biome.leaves;
+        hasTint = true;
     } else if (lower.find("grass") != std::string::npos && biome.hasGrass) {
-        color = applyTint(color, biome.grass);
+        tint    = biome.grass;
+        hasTint = true;
+    }
+
+    if (hasTint) {
+        color = BlockColor{
+            static_cast<std::uint8_t>((color.r * tint.r) / 255),
+            static_cast<std::uint8_t>((color.g * tint.g) / 255),
+            static_cast<std::uint8_t>((color.b * tint.b) / 255),
+            color.a
+        };
     }
 
     return color;

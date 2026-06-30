@@ -3,6 +3,7 @@
 #include "config/Config.h"
 #include "mod/MapDemo.h"
 #include "state/BlockColorManager.h"
+#include "state/RegionRenderer.h"
 #include "state/TerrainColorUtils.h"
 
 #include <mc/world/level/BlockSource.h>
@@ -12,9 +13,12 @@
 #include <mc/world/level/block/Block.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace map_demo {
+
+using Clock = std::chrono::high_resolution_clock;
 
 namespace {
 
@@ -115,6 +119,7 @@ void TerrainScanner::updateVisibleSet(int centerChunkX, int centerChunkZ, int di
 }
 
 void TerrainScanner::scanChunk(BlockSource* region, const ScanChunkKey& key, int minY, int maxY) {
+    auto t0 = Clock::now();
     LevelChunk* chunk = region->getChunk(key.chunkX, key.chunkZ);
     if (!isChunkLoaded(chunk)) return;
 
@@ -138,26 +143,65 @@ void TerrainScanner::scanChunk(BlockSource* region, const ScanChunkKey& key, int
         break;
     }
 
-    for (int localZ = 0; localZ < 16; ++localZ) {
-        for (int localX = 0; localX < 16; ++localX) {
-            int worldX = baseWorldX + localX;
-            int worldZ = baseWorldZ + localZ;
+    auto data =
+        MapCacheManager::getInstance().getRegion(MapCacheManager::worldToRegion(baseWorldX, baseWorldZ, key.dim));
+    int localChunkX = key.chunkX - floorDiv(key.chunkX, 16) * 16;
+    int localChunkZ = key.chunkZ - floorDiv(key.chunkZ, 16) * 16;
 
-            auto color = getBlockColorAtCameraHeight(chunk, localX, localZ, cameraHeight, minY, maxY, key.dim);
-            MapCacheManager::getInstance().updateBlock(worldX, worldZ, key.dim, color);
+    bool dataChanged = false;
+    {
+        std::unique_lock<std::shared_mutex> lock(data->mutex_);
+        for (int localZ = 0; localZ < 16; ++localZ) {
+            for (int localX = 0; localX < 16; ++localX) {
+                int worldX = baseWorldX + localX;
+                int worldZ = baseWorldZ + localZ;
+
+                auto info = getTerrainPixelAtCameraHeight(chunk, localX, localZ, cameraHeight, minY, maxY, key.dim);
+
+                int rx = worldX - floorDiv(worldX, 256) * 256;
+                int rz = worldZ - floorDiv(worldZ, 256) * 256;
+                int idx = rz * RegionData::SIZE + rx;
+
+                BlockColor oldColor{
+                    data->colors[idx * 4 + 0],
+                    data->colors[idx * 4 + 1],
+                    data->colors[idx * 4 + 2],
+                    data->colors[idx * 4 + 3]
+                };
+                auto oldH  = data->heights[idx];
+                auto oldSH = data->solidHeights[idx];
+                auto oldWD = data->waterDepths[idx];
+
+                if (oldColor != info.color || oldH != info.surfaceHeight || oldSH != info.solidHeight
+                    || oldWD != info.waterDepth) {
+                    dataChanged = true;
+                    data->colors[idx * 4 + 0] = info.color.r;
+                    data->colors[idx * 4 + 1] = info.color.g;
+                    data->colors[idx * 4 + 2] = info.color.b;
+                    data->colors[idx * 4 + 3] = info.color.a;
+                    data->heights[idx]      = static_cast<std::int16_t>(info.surfaceHeight);
+                    data->solidHeights[idx] = static_cast<std::int16_t>(info.solidHeight);
+                    data->waterDepths[idx] = info.waterDepth;
+                }
+            }
+        }
+        data->chunkLastScanFrame[localChunkZ * RegionData::CHUNKS + localChunkX] = totalFrames_;
+        if (dataChanged) {
+            data->dirty = true;
+            data->bakedDirty = true;
         }
     }
 
-    // 更新 chunk 时间戳并写入磁盘缓存
-    auto* data =
-        MapCacheManager::getInstance().getRegion(MapCacheManager::worldToRegion(baseWorldX, baseWorldZ, key.dim));
-    if (data) {
-        int localChunkX = key.chunkX - floorDiv(key.chunkX, 16) * 16;
-        int localChunkZ = key.chunkZ - floorDiv(key.chunkZ, 16) * 16;
-        if (localChunkX >= 0 && localChunkX < 16 && localChunkZ >= 0 && localChunkZ < 16) {
-            data->setChunkLastScanFrame(localChunkX, localChunkZ, totalFrames_);
-            saveChunkToDisk(key, data, localChunkX, localChunkZ);
-        }
+    if (dataChanged) {
+        saveChunkToDisk(key, data.get(), localChunkX, localChunkZ);
+    }
+
+    auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
+    static int s_chunkLog = 0;
+    if ((++s_chunkLog % 60) == 0) {
+        MapDemo::getInstance().getSelf().getLogger().debug(
+            "TerrainScanner::scanChunk chunk=({},{}), dim={}, time={}us", key.chunkX, key.chunkZ, key.dim, us
+        );
     }
 }
 
@@ -182,7 +226,8 @@ bool TerrainScanner::loadChunkFromDisk(const ScanChunkKey& key, RegionData* data
         auto blob = diskCache_->get(makeDiskKey(key));
         if (!blob) return false;
         deserializeChunk(data, localChunkX, localChunkZ, *blob);
-        data->setChunkLastScanFrame(localChunkX, localChunkZ, totalFrames_);
+        std::unique_lock<std::shared_mutex> lock(data->mutex_);
+        data->chunkLastScanFrame[localChunkZ * RegionData::CHUNKS + localChunkX] = totalFrames_;
         return true;
     } catch (const std::exception& e) {
         MapDemo::getInstance().getSelf().getLogger().error("TerrainScanner: load chunk from disk failed: {}", e.what());
@@ -192,7 +237,7 @@ bool TerrainScanner::loadChunkFromDisk(const ScanChunkKey& key, RegionData* data
 
 std::string TerrainScanner::serializeChunk(const RegionData* data, int chunkLocalX, int chunkLocalZ) {
     std::string blob;
-    blob.reserve(16 * 16 * 4);
+    blob.reserve(16 * 16 * (4 + 2 + 2 + 1));
     int startX = chunkLocalX * 16;
     int startZ = chunkLocalZ * 16;
     for (int z = 0; z < 16; ++z) {
@@ -204,11 +249,31 @@ std::string TerrainScanner::serializeChunk(const RegionData* data, int chunkLoca
             blob.push_back(static_cast<char>(c.a));
         }
     }
+    for (int z = 0; z < 16; ++z) {
+        for (int x = 0; x < 16; ++x) {
+            std::int16_t h = data->getHeight(startX + x, startZ + z);
+            blob.push_back(static_cast<char>(h & 0xFF));
+            blob.push_back(static_cast<char>((h >> 8) & 0xFF));
+        }
+    }
+    for (int z = 0; z < 16; ++z) {
+        for (int x = 0; x < 16; ++x) {
+            std::int16_t h = data->getSolidHeight(startX + x, startZ + z);
+            blob.push_back(static_cast<char>(h & 0xFF));
+            blob.push_back(static_cast<char>((h >> 8) & 0xFF));
+        }
+    }
+    for (int z = 0; z < 16; ++z) {
+        for (int x = 0; x < 16; ++x) {
+            blob.push_back(static_cast<char>(data->getWaterDepth(startX + x, startZ + z)));
+        }
+    }
     return blob;
 }
 
 void TerrainScanner::deserializeChunk(RegionData* data, int chunkLocalX, int chunkLocalZ, const std::string& blob) {
-    if (blob.size() < 16 * 16 * 4) return;
+    constexpr size_t expected = 16 * 16 * (4 + 2 + 2 + 1);
+    if (blob.size() < expected) return;
     int    startX = chunkLocalX * 16;
     int    startZ = chunkLocalZ * 16;
     size_t idx    = 0;
@@ -222,6 +287,32 @@ void TerrainScanner::deserializeChunk(RegionData* data, int chunkLocalX, int chu
             };
             data->setPixel(startX + x, startZ + z, c);
             idx += 4;
+        }
+    }
+    for (int z = 0; z < 16; ++z) {
+        for (int x = 0; x < 16; ++x) {
+            std::int16_t h = static_cast<std::int16_t>(
+                static_cast<std::uint8_t>(blob[idx]) |
+                (static_cast<std::uint8_t>(blob[idx + 1]) << 8)
+            );
+            data->setHeight(startX + x, startZ + z, h);
+            idx += 2;
+        }
+    }
+    for (int z = 0; z < 16; ++z) {
+        for (int x = 0; x < 16; ++x) {
+            std::int16_t h = static_cast<std::int16_t>(
+                static_cast<std::uint8_t>(blob[idx]) |
+                (static_cast<std::uint8_t>(blob[idx + 1]) << 8)
+            );
+            data->setSolidHeight(startX + x, startZ + z, h);
+            idx += 2;
+        }
+    }
+    for (int z = 0; z < 16; ++z) {
+        for (int x = 0; x < 16; ++x) {
+            data->setWaterDepth(startX + x, startZ + z, static_cast<std::uint8_t>(blob[idx]));
+            ++idx;
         }
     }
 }
@@ -239,6 +330,7 @@ bool TerrainScanner::isChunkLoaded(LevelChunk* chunk) { return chunk && chunk->m
 
 void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChunkZ, int dim, int minY, int maxY) {
     ++totalFrames_;
+    auto updateT0 = Clock::now();
 
     auto& cfg              = config::getConfig().terrain;
     int   scanRadiusChunks = cfg.scanRadius / 16;
@@ -312,8 +404,8 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
         ++loaded;
 
         // 检查是否需要扫描：从磁盘加载或检查时间戳
-        bool        needScan = true;
-        RegionData* data     = MapCacheManager::getInstance().getRegion(
+        bool                      needScan = true;
+        std::shared_ptr<RegionData> data   = MapCacheManager::getInstance().getRegion(
             MapCacheManager::worldToRegion(key.chunkX * 16, key.chunkZ * 16, key.dim)
         );
 
@@ -329,7 +421,7 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
                 }
             } else {
                 // 内存中无数据，尝试从磁盘加载
-                if (loadChunkFromDisk(key, data, localChunkX, localChunkZ)) {
+                if (loadChunkFromDisk(key, data.get(), localChunkX, localChunkZ)) {
                     needScan = false;
                     ++deferred;
                 }
@@ -350,14 +442,16 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
     }
 
     if (shouldLog) {
+        auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - updateT0).count();
         MapDemo::getInstance().getSelf().getLogger().debug(
-            "TerrainScanner::update done: processed={}, loaded={}, deferred={}, unloaded={}, skipped={}, evicted={}",
+            "TerrainScanner::update done: processed={}, loaded={}, deferred={}, unloaded={}, skipped={}, evicted={}, time={}us",
             processed,
             loaded,
             deferred,
             unloaded,
             skipped,
-            evicted
+            evicted,
+            totalUs
         );
     }
 

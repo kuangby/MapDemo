@@ -24,8 +24,17 @@ bool isBlockOpaque(const std::string& name, int dim);
 // 处理水的特殊效果（透明水）
 BlockColor processWater(LevelChunk* chunk, int cx, int cz, int waterSurfaceY, int minY);
 
-// 基于 cameraHeight 的方块颜色获取
-BlockColor getBlockColorAtCameraHeight(
+// 单个像素的地形信息
+struct TerrainPixelInfo {
+    BlockColor color;
+    int        surfaceHeight{0}; // mHeightmap
+    int        solidHeight{0};   // mRenderHeightmap
+    uint8_t    waterDepth{0};
+    bool       hasWater{false};
+};
+
+// 基于 cameraHeight 的方块颜色获取，同时返回高度信息
+TerrainPixelInfo getTerrainPixelAtCameraHeight(
     LevelChunk* chunk, int cx, int cz, int cameraHeight, int minY, int maxY, int dim
 );
 

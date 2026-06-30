@@ -26,21 +26,21 @@ ChunkPos MapCacheManager::regionToMinChunk(const RegionPos& pos) {
     return {pos.x * RegionData::CHUNKS, pos.z * RegionData::CHUNKS};
 }
 
-RegionData* MapCacheManager::getRegion(int regionX, int regionZ, int dim) {
+std::shared_ptr<RegionData> MapCacheManager::getRegion(int regionX, int regionZ, int dim) {
     return getRegion({regionX, regionZ, dim});
 }
 
-RegionData* MapCacheManager::getRegion(const RegionPos& pos) {
+std::shared_ptr<RegionData> MapCacheManager::getRegion(const RegionPos& pos) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = regions_.find(pos);
-    if (it != regions_.end()) return it->second.get();
-    auto [newIt, inserted] = regions_.emplace(pos, std::make_unique<RegionData>());
-    return newIt->second.get();
+    if (it != regions_.end()) return it->second;
+    auto [newIt, inserted] = regions_.emplace(pos, std::make_shared<RegionData>());
+    return newIt->second;
 }
 
 void MapCacheManager::updateBlock(int worldX, int worldZ, int dim, BlockColor color) {
-    auto pos   = worldToRegion(worldX, worldZ, dim);
-    auto* data = getRegion(pos);
+    auto pos = worldToRegion(worldX, worldZ, dim);
+    auto data = getRegion(pos);
 
     constexpr int REGION_SIZE = RegionData::SIZE;
     int localX = worldX - (pos.x * REGION_SIZE);
@@ -52,12 +52,16 @@ void MapCacheManager::updateBlock(int worldX, int worldZ, int dim, BlockColor co
     localZ = std::clamp(localZ, 0, REGION_SIZE - 1);
 
     data->setPixel(localX, localZ, color);
+    std::unique_lock<std::shared_mutex> lock(data->mutex_);
     data->dirty = true;
 }
 
 void MapCacheManager::markDirty(int regionX, int regionZ, int dim) {
-    auto* data = getRegion(regionX, regionZ, dim);
-    if (data) data->dirty = true;
+    auto data = getRegion(regionX, regionZ, dim);
+    if (data) {
+        std::unique_lock<std::shared_mutex> lock(data->mutex_);
+        data->dirty = true;
+    }
 }
 
 void MapCacheManager::evictRegion(int regionX, int regionZ, int dim) {
@@ -78,8 +82,8 @@ void MapCacheManager::evictChunk(int chunkX, int chunkZ, int dim) {
 
     int regionMinChunkX = pos.x * RegionData::CHUNKS;
     int regionMinChunkZ = pos.z * RegionData::CHUNKS;
-    int localChunkX     = chunkX - regionMinChunkX;
-    int localChunkZ     = chunkZ - regionMinChunkZ;
+    int localChunkX = chunkX - regionMinChunkX;
+    int localChunkZ = chunkZ - regionMinChunkZ;
     if (localChunkX < 0 || localChunkX >= RegionData::CHUNKS || localChunkZ < 0 || localChunkZ >= RegionData::CHUNKS) {
         return;
     }

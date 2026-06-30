@@ -4,6 +4,7 @@
 #include "helper/HookRegistry.h"
 #include "ll/api/mod/RegisterHelper.h"
 #include "state/BlockColorManager.h"
+#include "state/RegionRenderer.h"
 #include "state/TerrainScanner.h"
 
 #include <filesystem>
@@ -47,6 +48,7 @@ bool MapDemo::enable() {
 bool MapDemo::disable() {
     getSelf().getLogger().debug("Disabling...");
     unregisterAllHooks();
+    RegionRenderer::getInstance().shutdown();
     TerrainScanner::getInstance().shutdown();
     getSelf().getLogger().debug("Hooks unregistered");
     return true;

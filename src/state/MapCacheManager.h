@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -42,17 +43,78 @@ namespace map_demo {
 // Per-region surface color cache, 256x256 pixels RGBA
 struct RegionData {
     static constexpr int SIZE      = 16 * 16; // 256x256 blocks
-    static constexpr int BYTES     = SIZE * SIZE * 4;
+    static constexpr int PIXELS    = SIZE * SIZE;
+    static constexpr int BYTES     = PIXELS * 4;
     static constexpr int CHUNKS    = 16;      // chunks per side
 
     std::vector<std::uint8_t>  colors;              // RGBA
     std::vector<std::uint64_t> chunkLastScanFrame;  // 16x16 chunks
+    std::vector<std::uint8_t>  bakedColors;         // 256x256 RGBA after shadow baking
+    std::vector<std::int16_t>  heights;             // 256x256 surface height (mHeightmap)
+    std::vector<std::int16_t>  solidHeights;        // 256x256 solid height (mRenderHeightmap)
+    std::vector<std::uint8_t>  waterDepths;         // 256x256 water depth
     bool dirty{true};
+    bool bakedDirty{true};
+    mutable std::shared_mutex mutex_;               // protects all fields above
 
-    RegionData() : colors(BYTES, 0), chunkLastScanFrame(CHUNKS * CHUNKS, 0) {}
+    RegionData()
+        : colors(BYTES, 0),
+          chunkLastScanFrame(CHUNKS * CHUNKS, 0),
+          bakedColors(BYTES, 0),
+          heights(PIXELS, -128),
+          solidHeights(PIXELS, -128),
+          waterDepths(PIXELS, 0) {}
+
+    void setHeight(int localX, int localZ, std::int16_t h) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        heights[localZ * SIZE + localX] = h;
+    }
+
+    [[nodiscard]] std::int16_t getHeight(int localX, int localZ) const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return heights[localZ * SIZE + localX];
+    }
+
+    void setSolidHeight(int localX, int localZ, std::int16_t h) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        solidHeights[localZ * SIZE + localX] = h;
+    }
+
+    [[nodiscard]] std::int16_t getSolidHeight(int localX, int localZ) const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return solidHeights[localZ * SIZE + localX];
+    }
+
+    void setWaterDepth(int localX, int localZ, std::uint8_t depth) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        waterDepths[localZ * SIZE + localX] = depth;
+    }
+
+    [[nodiscard]] std::uint8_t getWaterDepth(int localX, int localZ) const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return waterDepths[localZ * SIZE + localX];
+    }
+
+    void setBakedPixel(int localX, int localZ, BlockColor c) {
+        int idx = (localZ * SIZE + localX) * 4;
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        bakedColors[idx + 0] = c.r;
+        bakedColors[idx + 1] = c.g;
+        bakedColors[idx + 2] = c.b;
+        bakedColors[idx + 3] = c.a;
+    }
+
+    [[nodiscard]] BlockColor getBakedPixel(int localX, int localZ) const {
+        int idx = (localZ * SIZE + localX) * 4;
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return BlockColor{bakedColors[idx + 0], bakedColors[idx + 1], bakedColors[idx + 2], bakedColors[idx + 3]};
+    }
+
+    void markBakedDirty() { bakedDirty = true; }
 
     void setPixel(int localX, int localZ, BlockColor c) {
         int idx = (localZ * SIZE + localX) * 4;
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         colors[idx + 0] = c.r;
         colors[idx + 1] = c.g;
         colors[idx + 2] = c.b;
@@ -61,22 +123,37 @@ struct RegionData {
 
     [[nodiscard]] BlockColor getPixel(int localX, int localZ) const {
         int idx = (localZ * SIZE + localX) * 4;
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         return BlockColor{colors[idx + 0], colors[idx + 1], colors[idx + 2], colors[idx + 3]};
     }
 
     void clearChunk(int chunkLocalX, int chunkLocalZ) {
         int startX = chunkLocalX * 16;
         int startZ = chunkLocalZ * 16;
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         for (int z = 0; z < 16; ++z) {
             for (int x = 0; x < 16; ++x) {
-                setPixel(startX + x, startZ + z, BlockColor{0, 0, 0, 0});
+                int idx = ((startZ + z) * SIZE + (startX + x)) * 4;
+                colors[idx + 0] = 0;
+                colors[idx + 1] = 0;
+                colors[idx + 2] = 0;
+                colors[idx + 3] = 0;
+                bakedColors[idx + 0] = 0;
+                bakedColors[idx + 1] = 0;
+                bakedColors[idx + 2] = 0;
+                bakedColors[idx + 3] = 0;
+                heights[(startZ + z) * SIZE + (startX + x)] = -128;
+                solidHeights[(startZ + z) * SIZE + (startX + x)] = -128;
+                waterDepths[(startZ + z) * SIZE + (startX + x)] = 0;
             }
         }
         chunkLastScanFrame[chunkLocalZ * CHUNKS + chunkLocalX] = 0;
         dirty = true;
+        bakedDirty = true;
     }
 
     [[nodiscard]] bool isEmpty() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         for (auto v : chunkLastScanFrame) {
             if (v != 0) return false;
         }
@@ -84,10 +161,12 @@ struct RegionData {
     }
 
     void setChunkLastScanFrame(int chunkLocalX, int chunkLocalZ, std::uint64_t frame) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         chunkLastScanFrame[chunkLocalZ * CHUNKS + chunkLocalX] = frame;
     }
 
     [[nodiscard]] std::uint64_t getChunkLastScanFrame(int chunkLocalX, int chunkLocalZ) const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         return chunkLastScanFrame[chunkLocalZ * CHUNKS + chunkLocalX];
     }
 };
@@ -100,8 +179,8 @@ public:
     void clearAll();
 
     // Get or create a region
-    RegionData* getRegion(int regionX, int regionZ, int dim);
-    RegionData* getRegion(const RegionPos& pos);
+    std::shared_ptr<RegionData> getRegion(int regionX, int regionZ, int dim);
+    std::shared_ptr<RegionData> getRegion(const RegionPos& pos);
 
     // Convert world coordinates to region coordinates
     [[nodiscard]] static RegionPos worldToRegion(int worldX, int worldZ, int dim);
@@ -125,7 +204,7 @@ public:
 private:
     MapCacheManager() = default;
 
-    std::unordered_map<RegionPos, std::unique_ptr<RegionData>> regions_;
+    std::unordered_map<RegionPos, std::shared_ptr<RegionData>> regions_;
     std::mutex mutex_;
 };
 

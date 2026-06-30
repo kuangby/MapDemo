@@ -106,10 +106,32 @@ struct TerrainConfig {
 
     // 每个维度的 cameraHeight（Y 坐标）
     struct {
-        int overworld = 320;  // 主世界
-        int nether    = 127;  // 地狱
-        int end       = 256;  // 末地
+        int overworld = 320; // 主世界
+        int nether    = 127; // 地狱
+        int end       = 256; // 末地
     } cameraHeight;
+
+    // 阴影渲染配置
+    struct {
+        // 0 = 无阴影，1 = 简单高度图梯度阴影，2 = 阴影图 + 边缘 bevel
+        int renderStyle = 2;
+
+        // Style 1 阴影强度：100 表示无效果，>100 变亮/<100 变暗的幅度
+        int shadowLevel = 130;
+
+        // Style 2 上采样倍数（1~16）
+        int renderScale = 2;
+
+        // Style 2 阴影 PCF 柔化半径（0~8，0 为硬阴影）
+        int pcfRadius = 1;
+
+        // 是否启用透明水效果
+        bool transparentWater = true;
+
+        // 固定光源方向（方位角 315° 西北，天顶角 60°）
+        float lightAzimuth = 315.0f;
+        float lightZenith  = 60.0f;
+    } shadow;
 
     // 颜色 JSON 文件路径（相对于 mod 目录）
     const char* blockColorPath = "resources/colors/block_color.json";

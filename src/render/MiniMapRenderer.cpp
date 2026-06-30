@@ -2,10 +2,12 @@
 
 #include "config/Config.h"
 #include "mod/MapDemo.h"
+#include "state/RegionRenderer.h"
 
 #include <imgui.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -15,6 +17,8 @@
 #include "state/MapState.h"
 
 namespace map_demo {
+
+using Clock = std::chrono::high_resolution_clock;
 
 MiniMapRenderer& MiniMapRenderer::getInstance() {
     static MiniMapRenderer instance;
@@ -117,16 +121,12 @@ void drawTerrainPixel(
 } // namespace
 
 void MiniMapRenderer::render() {
+    auto renderT0 = Clock::now();
     auto& cfg = config::getConfig();
     auto& mmc = cfg.miniMap;
 
     static int s_renderCount = 0;
-    if (++s_renderCount % 60 == 0) {
-        auto& state = MapState::getInstance();
-        MapDemo::getInstance().getSelf().getLogger().debug(
-            "MiniMapRenderer::render: count={}, hasPlayer={}", s_renderCount, state.hasPlayer()
-        );
-    }
+    ++s_renderCount;
     auto& io    = ImGui::GetIO();
     auto& state = MapState::getInstance();
     state.updateSmoothCamera(io.DeltaTime);
@@ -158,6 +158,12 @@ void MiniMapRenderer::render() {
         return ImVec2(cx + (worldX - smoothX) * scale, cy + (worldZ - smoothZ) * scale);
     };
 
+    // 请求异步烘焙本帧涉及的所有 region
+    auto requestBake = [&](const RegionPos& pos, const std::shared_ptr<RegionData>& data) {
+        if (!data || !data->bakedDirty) return;
+        RegionRenderer::getInstance().requestBake(data, pos, pos.dim);
+    };
+
     // 绘制地形
     if (cfg.terrain.enable) {
         int dim = state.dimensionId();
@@ -170,7 +176,7 @@ void MiniMapRenderer::render() {
         for (int worldZ = minWorldZ; worldZ <= maxWorldZ; ++worldZ) {
             for (int worldX = minWorldX; worldX <= maxWorldX; ++worldX) {
                 auto pos   = MapCacheManager::worldToRegion(worldX, worldZ, dim);
-                auto* data = MapCacheManager::getInstance().getRegion(pos);
+                auto data = MapCacheManager::getInstance().getRegion(pos);
                 if (!data) continue;
 
                 int localX = worldX - (pos.x * RegionData::SIZE);
@@ -180,6 +186,9 @@ void MiniMapRenderer::render() {
 
                 auto color = data->getPixel(localX, localZ);
                 if (color.a == 0) continue;
+
+                requestBake(pos, data);
+                color = data->getBakedPixel(localX, localZ);
 
                 drawTerrainPixel(drawList, static_cast<float>(worldX), static_cast<float>(worldZ), color,
                                  ImVec2(smoothX, smoothZ), radius - 1.0f, cx, cy, scale);
@@ -252,6 +261,13 @@ void MiniMapRenderer::render() {
     drawList->AddText(textPos, toImCol32(mmc.coordTextColor), coordBuf);
 
     drawList->AddCircle(center, radius, toImCol32(mmc.borderColor), mmc.circleSegments, mmc.borderThickness);
+
+    if (s_renderCount % 60 == 0) {
+        auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - renderT0).count();
+        MapDemo::getInstance().getSelf().getLogger().debug(
+            "MiniMapRenderer::render: count={}, total={}us", s_renderCount, totalUs
+        );
+    }
 }
 
 } // namespace map_demo

@@ -18,6 +18,7 @@
 #include "state/BlockColorManager.h"
 #include "state/MapCacheManager.h"
 #include "state/MapState.h"
+#include "state/RegionRenderer.h"
 #include "state/TerrainScanner.h"
 
 #include <cmath>
@@ -41,13 +42,14 @@ LL_TYPE_INSTANCE_HOOK(
 
     static bool s_wasInWorld = false;
 
-    if (isPlayerInWorld) {
-        const auto& pos = player->getPosition();
-        float       yaw = player->getRotation().y;
+        if (isPlayerInWorld) {
+            const auto& pos = player->getPosition();
+            float       yaw = player->getRotation().y;
 
         if (!s_wasInWorld) {
             MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player entered world");
             MapState::getInstance().resetSmoothCamera(pos.x, pos.z, yaw);
+            RegionRenderer::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
             s_wasInWorld = true;
@@ -69,6 +71,7 @@ LL_TYPE_INSTANCE_HOOK(
         if (s_wasInWorld) {
             MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player left world");
             MapState::getInstance().clearPlayer();
+            RegionRenderer::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
             s_wasInWorld = false;

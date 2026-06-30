@@ -61,7 +61,7 @@ void TerrainScanner::clearState() {
 
 std::vector<std::pair<int, int>> TerrainScanner::buildSpiralOffsets(int radiusChunks) {
     std::vector<std::pair<int, int>> offsets;
-    offsets.reserve(static_cast<size_t>((radiusChunks * 2 + 1) * (radiusChunks * 2 + 1)));
+    offsets.reserve((radiusChunks * 2 + 1) * (radiusChunks * 2 + 1));
 
     for (int dx = -radiusChunks; dx <= radiusChunks; ++dx) {
         for (int dz = -radiusChunks; dz <= radiusChunks; ++dz) {
@@ -289,7 +289,7 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
         }
 
         std::uint64_t framesSinceSeen = totalFrames_ - seenIt->second;
-        if (framesSinceSeen > static_cast<std::uint64_t>(scanRadiusChunks * 2 * 16)) {
+        if (framesSinceSeen > scanRadiusChunks * 2 * 16) {
             // 已离开视野 2 倍半径以上，按 chunk 粒度清除缓存
             lastSeenFrame_.erase(seenIt);
             MapCacheManager::getInstance().evictChunk(key.chunkX, key.chunkZ, key.dim);

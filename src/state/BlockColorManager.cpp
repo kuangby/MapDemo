@@ -124,15 +124,6 @@ BiomeColor BlockColorManager::getBiomeColor(const std::string& biomeName) const 
 BlockColor
 BlockColorManager::blendWithBiome(const std::string& blockName, BlockColor color, const std::string& biomeName) const {
     auto biome = getBiomeColor(biomeName);
-    MapDemo::getInstance().getSelf().getLogger().error(
-        "BlockColorManager: blending block '{}' with biome '{}'. color={}, biomeColor={}",
-        blockName,
-        biomeName,
-        std::to_string(color.a) + " " + std::to_string(color.r) + " " + std::to_string(color.g) + " "
-            + std::to_string(color.b),
-        std::to_string(biome.rgb.a) + " " + std::to_string(biome.rgb.r) + " " + std::to_string(biome.rgb.g) + " "
-            + std::to_string(biome.rgb.b)
-    );
 
     std::string lower;
     lower.reserve(blockName.size());

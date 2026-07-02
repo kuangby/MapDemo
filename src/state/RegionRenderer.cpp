@@ -13,9 +13,7 @@ using Clock = std::chrono::high_resolution_clock;
 
 namespace {
 
-inline int clamp255(int v) {
-    return std::clamp(v, 0, 255);
-}
+inline int clamp255(int v) { return std::clamp(v, 0, 255); }
 
 inline BlockColor multiplyColor(BlockColor c, float factor) {
     return BlockColor{
@@ -71,9 +69,7 @@ void RegionRenderer::safeStopWorker() {
     }
 }
 
-void RegionRenderer::shutdown() {
-    safeStopWorker();
-}
+void RegionRenderer::shutdown() { safeStopWorker(); }
 
 void RegionRenderer::clearQueueAndWait() {
     {
@@ -145,7 +141,10 @@ void RegionRenderer::workerLoop() {
         if ((++s_workerLog % 10) == 0 || us > 50000) {
             MapDemo::getInstance().getSelf().getLogger().debug(
                 "RegionRenderer::worker bake region=({},{}), dim={}, time={}us",
-                task.pos.x, task.pos.z, task.dim, us
+                task.pos.x,
+                task.pos.z,
+                task.dim,
+                us
             );
         }
     }
@@ -163,7 +162,7 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionData>& data, in
         shadow.info    = std::vector<BlockRenderInfo>(RegionData::PIXELS);
         for (int z = 0; z < RegionData::SIZE; ++z) {
             for (int x = 0; x < RegionData::SIZE; ++x) {
-                int idx = z * RegionData::SIZE + x;
+                int idx             = z * RegionData::SIZE + x;
                 shadow.terrain[idx] = BlockColor{
                     data->colors[idx * 4 + 0],
                     data->colors[idx * 4 + 1],
@@ -196,8 +195,8 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionData>& data, in
         std::unique_lock<std::shared_mutex> lock(data->mutex_);
         for (int z = 0; z < RegionData::SIZE; ++z) {
             for (int x = 0; x < RegionData::SIZE; ++x) {
-                int idx = z * RegionData::SIZE + x;
-                auto c = shadow.terrain[idx];
+                int  idx                       = z * RegionData::SIZE + x;
+                auto c                         = shadow.terrain[idx];
                 data->bakedColors[idx * 4 + 0] = c.r;
                 data->bakedColors[idx * 4 + 1] = c.g;
                 data->bakedColors[idx * 4 + 2] = c.b;
@@ -254,7 +253,9 @@ void RegionRenderer::bake(const RegionData* data, BlockColor* output, int dim) {
     auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
     if (totalUs > 30000) {
         MapDemo::getInstance().getSelf().getLogger().debug(
-            "RegionRenderer::bake sync slow style={}, time={}us", cfg.renderStyle, totalUs
+            "RegionRenderer::bake sync slow style={}, time={}us",
+            cfg.renderStyle,
+            totalUs
         );
     }
 }
@@ -317,7 +318,7 @@ void RegionRenderer::upscale(const ShadowRegion& src, std::vector<BlockColor>& d
     for (int z = 0; z < dstSize; ++z) {
         int sz = std::min(z / scale, ShadowRegion::SIZE - 1);
         for (int x = 0; x < dstSize; ++x) {
-            int sx       = std::min(x / scale, ShadowRegion::SIZE - 1);
+            int sx               = std::min(x / scale, ShadowRegion::SIZE - 1);
             dst[z * dstSize + x] = src.getPixel(sx, sz);
         }
     }
@@ -333,20 +334,24 @@ void RegionRenderer::downsample(const std::vector<BlockColor>& src, ShadowRegion
                 for (int dx = 0; dx < scale; ++dx) {
                     int sx = x * scale + dx;
                     if (sx >= srcSize) continue;
-                    auto c = src[sy * srcSize + sx];
-                    r += c.r;
-                    g += c.g;
-                    b += c.b;
-                    a += c.a;
+                    auto c  = src[sy * srcSize + sx];
+                    r      += c.r;
+                    g      += c.g;
+                    b      += c.b;
+                    a      += c.a;
                 }
             }
             int samples = scale * scale;
-            dst.setPixel(x, z, BlockColor{
-                static_cast<std::uint8_t>(r / samples),
-                static_cast<std::uint8_t>(g / samples),
-                static_cast<std::uint8_t>(b / samples),
-                static_cast<std::uint8_t>(a / samples)
-            });
+            dst.setPixel(
+                x,
+                z,
+                BlockColor{
+                    static_cast<std::uint8_t>(r / samples),
+                    static_cast<std::uint8_t>(g / samples),
+                    static_cast<std::uint8_t>(b / samples),
+                    static_cast<std::uint8_t>(a / samples)
+                }
+            );
         }
     }
 }
@@ -361,15 +366,15 @@ void RegionRenderer::applyShadowMap(ShadowRegion& shadow, int scale) {
     const float azimuth_rad = cfg.lightAzimuth * deg2rad;
     const float zenith_rad  = cfg.lightZenith * deg2rad;
 
-    const float sunX = std::sin(azimuth_rad) * std::cos(zenith_rad);
-    const float sunY = std::sin(zenith_rad);
-    const float sunZ = -std::cos(azimuth_rad) * std::cos(zenith_rad);
+    const float sunX     = std::sin(azimuth_rad) * std::cos(zenith_rad);
+    const float sunY     = std::sin(zenith_rad);
+    const float sunZ     = -std::cos(azimuth_rad) * std::cos(zenith_rad);
     const float sun2dLen = std::sqrt(sunX * sunX + sunZ * sunZ);
     if (sun2dLen < 0.0001f) return;
 
-    const float sdx         = sunX / sun2dLen;
-    const float sdz         = sunZ / sun2dLen;
-    const float dzPerStep   = (sunY / sun2dLen) / static_cast<float>(scale);
+    const float sdx       = sunX / sun2dLen;
+    const float sdz       = sunZ / sun2dLen;
+    const float dzPerStep = (sunY / sun2dLen) / static_cast<float>(scale);
 
     const int HR = ShadowRegion::SIZE * scale;
 
@@ -439,10 +444,10 @@ void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
     constexpr float kEdgeDark    = 0.72f;
     constexpr float kCornerBoost = 0.40f;
 
-    const int   edgeW  = std::max(1, scale / 6);
-    const float rcpEw  = 1.0f / static_cast<float>(edgeW);
+    const int   edgeW = std::max(1, scale / 6);
+    const float rcpEw = 1.0f / static_cast<float>(edgeW);
 
-    const int HR = ShadowRegion::SIZE * scale;
+    const int               HR = ShadowRegion::SIZE * scale;
     std::vector<BlockColor> hrImage;
     upscale(shadow, hrImage, scale, HR);
 
@@ -451,10 +456,10 @@ void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
             float h = shadow.getSolidHeight(bx, bz);
             if (h <= -128) continue;
 
-            float hl = (bx > 0) ? shadow.getSolidHeight(bx - 1, bz) : h;
+            float hl  = (bx > 0) ? shadow.getSolidHeight(bx - 1, bz) : h;
             float hr_ = (bx < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx + 1, bz) : h;
-            float ht = (bz > 0) ? shadow.getSolidHeight(bx, bz - 1) : h;
-            float hb = (bz < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx, bz + 1) : h;
+            float ht  = (bz > 0) ? shadow.getSolidHeight(bx, bz - 1) : h;
+            float hb  = (bz < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx, bz + 1) : h;
 
             int x0 = bx * scale;
             int y0 = bz * scale;
@@ -470,13 +475,11 @@ void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
 
                     if (txL == 0.0f && txR == 0.0f && tyT == 0.0f && tyB == 0.0f) continue;
 
-                    float factor = 1.0f;
+                    float factor    = 1.0f;
                     auto  applyEdge = [&](float t, float cur, float neigh) {
                         if (t <= 0.0f) return;
-                        if (cur > neigh)
-                            factor *= 1.0f + (kEdgeBright - 1.0f) * t;
-                        else if (cur < neigh)
-                            factor *= 1.0f + (kEdgeDark - 1.0f) * t;
+                        if (cur > neigh) factor *= 1.0f + (kEdgeBright - 1.0f) * t;
+                        else if (cur < neigh) factor *= 1.0f + (kEdgeDark - 1.0f) * t;
                     };
                     applyEdge(txL, h, hl);
                     applyEdge(txR, h, hr_);
@@ -485,10 +488,8 @@ void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
 
                     auto applyCorner = [&](float tc, float n1, float n2) {
                         if (tc <= 0.0f) return;
-                        if (h > n1 && h > n2)
-                            factor *= 1.0f + (kEdgeBright - 1.0f) * tc * kCornerBoost;
-                        else if (h < n1 && h < n2)
-                            factor *= 1.0f + (kEdgeDark - 1.0f) * tc * kCornerBoost;
+                        if (h > n1 && h > n2) factor *= 1.0f + (kEdgeBright - 1.0f) * tc * kCornerBoost;
+                        else if (h < n1 && h < n2) factor *= 1.0f + (kEdgeDark - 1.0f) * tc * kCornerBoost;
                     };
                     applyCorner(std::min(txL, tyT), hl, ht);
                     applyCorner(std::min(txR, tyT), hr_, ht);
@@ -498,8 +499,8 @@ void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
                     if (factor == 1.0f) continue;
                     factor = std::clamp(factor, 0.55f, 1.58f);
 
-                    int hi               = x0 + dx;
-                    int hj               = y0 + dy;
+                    int hi                = x0 + dx;
+                    int hj                = y0 + dy;
                     hrImage[hj * HR + hi] = multiplyColor(hrImage[hj * HR + hi], factor);
                 }
             }

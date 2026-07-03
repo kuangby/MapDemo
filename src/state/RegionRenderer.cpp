@@ -181,13 +181,12 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionData>& data, in
     }
 
     auto& cfg = config::getConfig().terrain.shadow;
+    if (cfg.transparentWater) applyWaterOverlay(shadow);
+
     if (cfg.renderStyle == 1) {
-        if (cfg.transparentWater) applyWaterOverlay(shadow);
         applyStyle1(shadow);
     } else if (cfg.renderStyle == 2) {
         applyStyle2(shadow);
-    } else {
-        if (cfg.transparentWater) applyWaterOverlay(shadow);
     }
 
     // Write result back
@@ -513,8 +512,6 @@ void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
 void RegionRenderer::applyStyle2(ShadowRegion& shadow) {
     auto& cfg   = config::getConfig().terrain.shadow;
     int   scale = std::clamp(cfg.renderScale, 1, 16);
-
-    if (cfg.transparentWater) applyWaterOverlay(shadow);
 
     applyShadowMap(shadow, scale);
     applyBevel(shadow, scale);

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config/Config.h"
-#include "state/ChunkManager.h"
 #include "state/MapCacheManager.h"
 
 #include <ll/api/data/KeyValueDB.h>
@@ -10,7 +8,7 @@
 #include <mc/world/level/chunk/LevelChunk.h>
 
 #include <cstdint>
-#include <memory>
+#include <limits>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -49,8 +47,8 @@ namespace std {
 template <>
 struct hash<map_demo::ScanChunkKey> {
     std::size_t operator()(const map_demo::ScanChunkKey& k) const noexcept {
-        std::uint64_t v = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(k.chunkX)) << 32) |
-                          static_cast<std::uint64_t>(static_cast<std::uint32_t>(k.chunkZ));
+        std::uint64_t v = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(k.chunkX)) << 32)
+                        | static_cast<std::uint64_t>(static_cast<std::uint32_t>(k.chunkZ));
         return v ^ (static_cast<std::uint64_t>(k.dim) << 48);
     }
 };
@@ -68,9 +66,6 @@ class TerrainScanner {
 public:
     static TerrainScanner& getInstance();
 
-    // 初始化磁盘缓存，path 为 KeyValueDB 目录
-    bool initializeDiskCache(const std::filesystem::path& path);
-
     // 关闭时清理资源
     void shutdown();
 
@@ -78,14 +73,7 @@ public:
     void clearState();
 
     // 每帧调用一次，处理待扫描任务
-    void update(
-        BlockSource* region,
-        int          playerChunkX,
-        int          playerChunkZ,
-        int          dim,
-        int          minY,
-        int          maxY
-    );
+    void update(BlockSource* region, int playerChunkX, int playerChunkZ, int dim, int minY, int maxY);
 
     // 获取当前累计帧数
     [[nodiscard]] std::uint64_t totalFrames() const { return totalFrames_; }
@@ -103,15 +91,15 @@ private:
     void scanChunk(BlockSource* region, const ScanChunkKey& key, int minY, int maxY);
 
     // 序列化/反序列化单个 chunk 的颜色数据
-    std::string serializeChunk(const RegionData* data, int chunkLocalX, int chunkLocalZ);
-    void deserializeChunk(RegionData* data, int chunkLocalX, int chunkLocalZ, const std::string& blob);
+    // std::string serializeChunk(const RegionData* data, int chunkLocalX, int chunkLocalZ);
+    // void        deserializeChunk(RegionData* data, int chunkLocalX, int chunkLocalZ, const std::string& blob);
 
     // 磁盘缓存读写
-    void saveChunkToDisk(const ScanChunkKey& key, const RegionData* data, int localChunkX, int localChunkZ);
-    bool loadChunkFromDisk(const ScanChunkKey& key, RegionData* data, int localChunkX, int localChunkZ);
+    // void saveChunkToDisk(const ScanChunkKey& key, const RegionData* data, int localChunkX, int localChunkZ);
+    // bool loadChunkFromDisk(const ScanChunkKey& key, RegionData* data, int localChunkX, int localChunkZ);
 
     // 生成 KeyValueDB 的 key
-    static std::string makeDiskKey(const ScanChunkKey& key);
+    // static std::string makeDiskKey(const ScanChunkKey& key);
 
     // 判断 chunk 是否已加载
     static bool isChunkLoaded(LevelChunk* chunk);
@@ -119,18 +107,16 @@ private:
     std::uint64_t totalFrames_{0};
 
     int scanRadiusChunks_{0};
-    std::vector<std::pair<int, int>> spiralOffsets_;
+
+    // 上次 updateVisibleSet 的状态，用于避免每帧重复遍历
+    int lastVisibleCenterChunkX_{std::numeric_limits<int>::max()};
+    int lastVisibleCenterChunkZ_{std::numeric_limits<int>::max()};
+    int lastVisibleDim_{std::numeric_limits<int>::max()};
+    int lastVisibleScanRadiusChunks_{-1};
 
     // 优先队列：按 nextScanFrame 排序
-    std::set<ScanEntry, ScanEntryCompare> scanQueue_;
+    std::set<ScanEntry, ScanEntryCompare>                                             scanQueue_;
     std::unordered_map<ScanChunkKey, std::set<ScanEntry, ScanEntryCompare>::iterator> scanMap_;
-
-    // 每个 chunk 最后一次出现在视野内的帧
-    std::unordered_map<ScanChunkKey, std::uint64_t> lastSeenFrame_;
-
-    // 磁盘缓存
-    std::unique_ptr<ll::data::KeyValueDB> diskCache_;
-    bool diskCacheEnabled_{false};
 };
 
 } // namespace map_demo

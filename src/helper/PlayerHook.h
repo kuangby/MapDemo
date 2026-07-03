@@ -3,27 +3,23 @@
 #include <ll/api/memory/Hook.h>
 #include <mc/client/game/ClientInstance.h>
 #include <mc/client/player/LocalPlayer.h>
-#include <mc/world/level/BlockSource.h>
-#include <mc/world/level/block/Block.h>
 #include <mc/world/level/BlockPos.h>
+#include <mc/world/level/BlockSource.h>
+#include <mc/world/level/ChunkBlockPos.h>
+#include <mc/world/level/ChunkLocalHeight.h>
 #include <mc/world/level/biome/Biome.h>
+#include <mc/world/level/block/Block.h>
 #include <mc/world/level/chunk/ChunkState.h>
 #include <mc/world/level/chunk/LevelChunk.h>
 #include <mc/world/level/dimension/Dimension.h>
-#include <mc/world/level/ChunkBlockPos.h>
-#include <mc/world/level/ChunkLocalHeight.h>
+
 
 #include "config/Config.h"
 #include "mod/MapDemo.h"
-#include "state/BlockColorManager.h"
 #include "state/MapCacheManager.h"
 #include "state/MapState.h"
 #include "state/RegionRenderer.h"
 #include "state/TerrainScanner.h"
-
-#include <cmath>
-#include <string>
-#include <string_view>
 
 namespace map_demo {
 
@@ -42,9 +38,9 @@ LL_TYPE_INSTANCE_HOOK(
 
     static bool s_wasInWorld = false;
 
-        if (isPlayerInWorld) {
-            const auto& pos = player->getPosition();
-            float       yaw = player->getRotation().y;
+    if (isPlayerInWorld) {
+        const auto& pos = player->getPosition();
+        float       yaw = player->getRotation().y;
 
         if (!s_wasInWorld) {
             MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player entered world");
@@ -53,6 +49,16 @@ LL_TYPE_INSTANCE_HOOK(
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
             s_wasInWorld = true;
+
+            if (config::getConfig().terrain.enableDiskCache) {
+                auto worldPath = MapDemo::getInstance().getSelf().getWorldDataDir();
+                auto cachePath = worldPath.has_value()
+                                   ? worldPath.value() / "terrain_cache"
+                                   : MapDemo::getInstance().getSelf().getDataDir() / "terrain_cache";
+                std::filesystem::create_directories(cachePath);
+                bool cacheOk = MapCacheManager::getInstance().initializeDiskCache(cachePath);
+                MapDemo::getInstance().getSelf().getLogger().debug("Terrain disk cache init result: {}", cacheOk);
+            }
         }
 
         MapState::getInstance().updatePlayer(pos.x, pos.y, pos.z, yaw, static_cast<int>(player->getDimensionId()));
@@ -66,6 +72,7 @@ LL_TYPE_INSTANCE_HOOK(
             auto  pChunk = ChunkManager::worldToChunk(pos.x, pos.z);
             int   dim    = static_cast<int>(player->getDimensionId());
             TerrainScanner::getInstance().update(this->getRegion(), pChunk.x, pChunk.z, dim, minY, maxY);
+            MapCacheManager::getInstance().evictRegionsOutsideRadius(pChunk.x, pChunk.z, dim, cfg.terrain.scanRadius);
         }
     } else {
         if (s_wasInWorld) {

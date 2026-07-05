@@ -2,14 +2,21 @@
 
 #include "config/Config.h"
 #include "mod/MapDemo.h"
+#include "pos/ChunkPosWithDim.h"
+#include "pos/ChunkWorldPos.h"
+#include "pos/RegionChunkPos.h"
+#include "pos/RegionPos.h"
 #include "state/BlockColorManager.h"
 #include "state/TerrainColorUtils.h"
+#include "state/cache/MapCacheManager.h"
 
+#include "mc/world/level/dimension/Dimension.h"
 #include <mc/world/level/BlockSource.h>
 #include <mc/world/level/ChunkBlockPos.h>
 #include <mc/world/level/ChunkLocalHeight.h>
 #include <mc/world/level/biome/Biome.h>
 #include <mc/world/level/block/Block.h>
+
 
 #include <algorithm>
 #include <chrono>
@@ -20,12 +27,6 @@ namespace map_demo {
 using Clock = std::chrono::high_resolution_clock;
 
 namespace {
-
-inline int floorDiv(int a, int b) {
-    if (b <= 0) return 0;
-    if (a >= 0) return a / b;
-    return (a + 1) / b - 1;
-}
 
 struct ChunkRect {
     int xMin;
@@ -73,9 +74,7 @@ void TerrainScanner::clearState() {
     scanMap_.clear();
     totalFrames_                 = 0;
     scanRadiusChunks_            = 0;
-    lastVisibleCenterChunkX_     = std::numeric_limits<int>::max();
-    lastVisibleCenterChunkZ_     = std::numeric_limits<int>::max();
-    lastVisibleDim_              = std::numeric_limits<int>::max();
+    lastVisibleCenterChunkPos    = {0, 0, -1};
     lastVisibleScanRadiusChunks_ = -1;
 }
 
@@ -103,14 +102,14 @@ std::vector<std::pair<int, int>> TerrainScanner::buildSpiralOffsets(int radiusCh
     return offsets;
 }
 
-void TerrainScanner::updateVisibleSet(int centerChunkX, int centerChunkZ, int dim, int scanRadiusChunks) {
+void TerrainScanner::updateVisibleSet(const ChunkPosWithDim& playerChunkPos, int scanRadiusChunks) {
     scanRadiusChunks_ = scanRadiusChunks;
 
     // scanMap_ 为空时，用螺旋顺序初始化扫描队列，保证中心优先扫描
     if (scanMap_.empty() && scanRadiusChunks > 0) {
         for (auto [dx, dz] : buildSpiralOffsets(scanRadiusChunks)) {
-            ScanChunkKey key{centerChunkX + dx, centerChunkZ + dz, dim};
-            ScanEntry    entry{totalFrames_, key};
+            ChunkPosWithDim key{playerChunkPos.x + dx, playerChunkPos.z + dz, playerChunkPos.dimId};
+            ScanEntry       entry{totalFrames_, key};
             auto [newIt, inserted] = scanQueue_.insert(entry);
             if (inserted) scanMap_[key] = newIt;
         }
@@ -118,29 +117,29 @@ void TerrainScanner::updateVisibleSet(int centerChunkX, int centerChunkZ, int di
     }
 
     ChunkRect oldRect{
-        lastVisibleCenterChunkX_ - lastVisibleScanRadiusChunks_,
-        lastVisibleCenterChunkX_ + lastVisibleScanRadiusChunks_,
-        lastVisibleCenterChunkZ_ - lastVisibleScanRadiusChunks_,
-        lastVisibleCenterChunkZ_ + lastVisibleScanRadiusChunks_
+        lastVisibleCenterChunkPos.x - lastVisibleScanRadiusChunks_,
+        lastVisibleCenterChunkPos.x + lastVisibleScanRadiusChunks_,
+        lastVisibleCenterChunkPos.z - lastVisibleScanRadiusChunks_,
+        lastVisibleCenterChunkPos.z + lastVisibleScanRadiusChunks_
     };
 
     ChunkRect newRect{
-        centerChunkX - scanRadiusChunks,
-        centerChunkX + scanRadiusChunks,
-        centerChunkZ - scanRadiusChunks,
-        centerChunkZ + scanRadiusChunks
+        playerChunkPos.x - scanRadiusChunks,
+        playerChunkPos.x + scanRadiusChunks,
+        playerChunkPos.z - scanRadiusChunks,
+        playerChunkPos.z + scanRadiusChunks
     };
 
     // 半径或维度变化：直接全量更新
-    if (lastVisibleScanRadiusChunks_ < 0 || dim != lastVisibleDim_) {
+    if (lastVisibleScanRadiusChunks_ < 0 || playerChunkPos.dimId != lastVisibleCenterChunkPos.dimId) {
         // 移除旧的全部
         scanQueue_.clear();
         scanMap_.clear();
         // 添加新的全部
         // scanMap_ 为空时，用螺旋顺序初始化扫描队列，保证中心优先扫描
         for (auto [dx, dz] : buildSpiralOffsets(scanRadiusChunks)) {
-            ScanChunkKey key{centerChunkX + dx, centerChunkZ + dz, dim};
-            ScanEntry    entry{totalFrames_, key};
+            ChunkPosWithDim key{playerChunkPos.x + dx, playerChunkPos.z + dz, playerChunkPos.dimId};
+            ScanEntry       entry{totalFrames_, key};
             auto [newIt, inserted] = scanQueue_.insert(entry);
             if (inserted) scanMap_[key] = newIt;
         }
@@ -153,8 +152,8 @@ void TerrainScanner::updateVisibleSet(int centerChunkX, int centerChunkZ, int di
     for (const auto& rect : removeRects) {
         for (int z = rect.zMin; z <= rect.zMax; ++z) {
             for (int x = rect.xMin; x <= rect.xMax; ++x) {
-                ScanChunkKey key{x, z, dim};
-                auto         mapIt = scanMap_.find(key);
+                ChunkPosWithDim key{x, z, playerChunkPos.dimId};
+                auto            mapIt = scanMap_.find(key);
                 if (mapIt != scanMap_.end()) {
                     scanQueue_.erase(mapIt->second);
                     scanMap_.erase(mapIt);
@@ -168,7 +167,7 @@ void TerrainScanner::updateVisibleSet(int centerChunkX, int centerChunkZ, int di
     for (const auto& rect : addRects) {
         for (int z = rect.zMin; z <= rect.zMax; ++z) {
             for (int x = rect.xMin; x <= rect.xMax; ++x) {
-                ScanChunkKey key{x, z, dim};
+                ChunkPosWithDim key{x, z, playerChunkPos.dimId};
                 if (!scanMap_.contains(key)) {
                     ScanEntry entry{totalFrames_, key};
                     auto [newIt, inserted] = scanQueue_.insert(entry);
@@ -179,17 +178,14 @@ void TerrainScanner::updateVisibleSet(int centerChunkX, int centerChunkZ, int di
     }
 }
 
-void TerrainScanner::scanChunk(BlockSource* region, const ScanChunkKey& key, int minY, int maxY) {
+void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) const {
     auto        t0    = Clock::now();
-    LevelChunk* chunk = region->getChunk(key.chunkX, key.chunkZ);
+    LevelChunk* chunk = region->getChunk(key.x, key.z);
     if (!isChunkLoaded(chunk)) return;
-
-    int baseWorldX = key.chunkX * 16;
-    int baseWorldZ = key.chunkZ * 16;
 
     // 根据维度获取 cameraHeight
     int cameraHeight;
-    switch (key.dim) {
+    switch (key.dimId) {
     case 0:
         cameraHeight = config::getConfig().terrain.cameraHeight.overworld;
         break;
@@ -204,50 +200,56 @@ void TerrainScanner::scanChunk(BlockSource* region, const ScanChunkKey& key, int
         break;
     }
 
-    auto chunkData = MapCacheManager::getInstance().getOrCreateChunk({key.chunkX, key.chunkZ}, key.dim);
+    auto regionData = MapCacheManager::getInstance().getOrCreateRegion(RegionPos(key));
+    auto chunkData  = regionData->getOrCreateChunkData(RegionChunkPos(key));
 
-    int localChunkX = key.chunkX - floorDiv(key.chunkX, 16) * 16;
-    int localChunkZ = key.chunkZ - floorDiv(key.chunkZ, 16) * 16;
+    int minY = region->mMaxHeight;
 
-    bool dataChanged = false;
+    bool dataChanged   = false;
+    bool heightChanged = false;
     {
         std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
-        for (int localZ = 0; localZ < 16; ++localZ) {
-            for (int localX = 0; localX < 16; ++localX) {
-                int worldX = baseWorldX + localX;
-                int worldZ = baseWorldZ + localZ;
+        for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
+            for (int chunkWorldPosZ = 0; chunkWorldPosZ < 16; ++chunkWorldPosZ) {
+                auto color = getTerrainPixelAtCameraHeight(chunk, {chunkWorldPosX, chunkWorldPosZ}, cameraHeight);
 
-                auto color = getTerrainPixelAtCameraHeight(chunk, localX, localZ, cameraHeight, minY, maxY, key.dim);
+                int idx = chunkWorldPosZ * 16 + chunkWorldPosX;
 
-                int rx  = worldX - floorDiv(worldX, 256) * 256;
-                int rz  = worldZ - floorDiv(worldZ, 256) * 256;
-                int idx = rz * RegionData::SIZE + rx;
+                auto& currentBlockData = chunkData->blockData[chunkWorldPosX][chunkWorldPosZ];
 
-                if (!chunkData->loadChunkBaseData || chunkData->colors[rx][rz] != color
-                    || chunkData->heights[rx][rz] != chunk->mHeightmap.get()[idx].mVal + minY
-                    || chunkData->solidHeights[rx][rz] != chunk->mRenderHeightmap.get()[idx].mVal + minY) {
-                    chunkData->loadChunkBaseData    = true;
-                    chunkData->colors[rx][rz]       = color;
-                    chunkData->heights[rx][rz]      = chunk->mHeightmap.get()[idx].mVal + minY;
-                    chunkData->solidHeights[rx][rz] = chunk->mRenderHeightmap.get()[idx].mVal + minY;
-                    chunkData->waterDepths[rx][rz] =
-                        (chunkData->heights[rx][rz] > chunkData->solidHeights[rx][rz])
-                            ? static_cast<std::uint16_t>(chunkData->heights[rx][rz] - chunkData->solidHeights[rx][rz])
-                            : 0;
+                if (!chunkData->loadChunkBaseData) {
+
+                    chunkData->loadChunkBaseData = true;
+                    currentBlockData.color       = color;
+                    currentBlockData.height      = static_cast<std::int16_t>(chunk->mHeightmap.get()[idx].mVal + minY);
+                    currentBlockData.solidHeight =
+                        static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
+
+                    dataChanged   = true;
+                    heightChanged = true;
+                } else {
+                    if (currentBlockData.color != color) {
+                        currentBlockData.color = color;
+                        dataChanged            = true;
+                    }
+                    if (currentBlockData.height != chunk->mHeightmap.get()[idx].mVal + minY) {
+                        currentBlockData.height = static_cast<std::int16_t>(chunk->mHeightmap.get()[idx].mVal + minY);
+                        heightChanged           = true;
+                    }
+                    if (currentBlockData.solidHeight != chunk->mRenderHeightmap.get()[idx].mVal + minY) {
+                        currentBlockData.solidHeight =
+                            static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
+                        heightChanged = true;
+                    }
                 }
             }
         }
         chunkData->lastScanFrame = totalFrames_;
-        // todo:
-        // if (dataChanged) {
-        //     data->dirty      = true;
-        //     data->bakedDirty = true;
-        // }
+        if (dataChanged) {
+            regionData->markDirty();
+            regionData->markBakedDirty();
+        } else if (heightChanged) regionData->markBakedDirty();
     }
-
-    // if (dataChanged) {
-    //     saveChunkToDisk(key, data.get(), localChunkX, localChunkZ);
-    // }
 
     auto       us         = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
     static int s_chunkLog = 0;
@@ -255,7 +257,7 @@ void TerrainScanner::scanChunk(BlockSource* region, const ScanChunkKey& key, int
         MapDemo::getInstance()
             .getSelf()
             .getLogger()
-            .debug("TerrainScanner::scanChunk chunk=({},{}), dim={}, time={}us", key.chunkX, key.chunkZ, key.dim, us);
+            .debug("TerrainScanner::scanChunk chunk=({},{}), dim={}, time={}us", key.x, key.z, key.dimId, us);
     }
 }
 
@@ -381,7 +383,7 @@ void TerrainScanner::scanChunk(BlockSource* region, const ScanChunkKey& key, int
 
 bool TerrainScanner::isChunkLoaded(LevelChunk* chunk) { return chunk && chunk->mLoadState.get() == ChunkState::Loaded; }
 
-void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChunkZ, int dim, int minY, int maxY) {
+void TerrainScanner::update(BlockSource* region, const ChunkPosWithDim& playerChunkPos) {
     ++totalFrames_;
     auto updateT0 = Clock::now();
 
@@ -389,19 +391,16 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
     int   scanRadiusChunks = cfg.scanRadius / 16;
 
     // 只有玩家位置、维度或扫描半径变化时才重新构建可见集合
-    if (playerChunkX != lastVisibleCenterChunkX_ || playerChunkZ != lastVisibleCenterChunkZ_ || dim != lastVisibleDim_
-        || scanRadiusChunks != lastVisibleScanRadiusChunks_) {
-        updateVisibleSet(playerChunkX, playerChunkZ, dim, scanRadiusChunks);
-        lastVisibleCenterChunkX_     = playerChunkX;
-        lastVisibleCenterChunkZ_     = playerChunkZ;
-        lastVisibleDim_              = dim;
+    if (playerChunkPos != lastVisibleCenterChunkPos || scanRadiusChunks != lastVisibleScanRadiusChunks_) {
+        updateVisibleSet(playerChunkPos, scanRadiusChunks);
+        lastVisibleCenterChunkPos    = playerChunkPos;
         lastVisibleScanRadiusChunks_ = scanRadiusChunks;
     }
 
     static int s_updateLogCounter = 0;
     bool       shouldLog          = (++s_updateLogCounter % 120 == 0);
 
-    ScanChunkKey queueFrontKey{0, 0, 0};
+    ChunkPosWithDim queueFrontKey{0, 0, 0};
     if (!scanQueue_.empty()) queueFrontKey = scanQueue_.begin()->key;
 
     if (shouldLog) {
@@ -411,11 +410,11 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
             totalFrames_,
             scanQueue_.size(),
             scanMap_.size(),
-            playerChunkX,
-            playerChunkZ,
-            dim,
-            queueFrontKey.chunkX,
-            queueFrontKey.chunkZ,
+            playerChunkPos.x,
+            playerChunkPos.z,
+            playerChunkPos.dimId,
+            queueFrontKey.x,
+            queueFrontKey.z,
             scanQueue_.empty() ? 0ULL : scanQueue_.begin()->nextScanFrame
         );
     }
@@ -430,7 +429,7 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
         auto it = scanQueue_.begin();
         if (it->nextScanFrame > totalFrames_) break;
 
-        ScanChunkKey key = it->key;
+        ChunkPosWithDim key = it->key;
         scanQueue_.erase(it);
         scanMap_.erase(key);
 
@@ -446,7 +445,7 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
         // }
 
         // 检查 chunk 是否已加载
-        LevelChunk* chunk = region->getChunk(key.chunkX, key.chunkZ);
+        LevelChunk* chunk = region->getChunk(key.x, key.z);
         if (!isChunkLoaded(chunk)) {
             // 未加载：放到下一轮扫描，不占用本帧处理上限
             ScanEntry newEntry{totalFrames_ + static_cast<std::uint64_t>(cfg.rescanIntervalFrames), key};
@@ -460,32 +459,17 @@ void TerrainScanner::update(BlockSource* region, int playerChunkX, int playerChu
         ++loaded;
 
         // 检查是否需要扫描：从磁盘加载或检查时间戳
-        bool                        needScan = true;
-        std::shared_ptr<RegionData> data     = MapCacheManager::getInstance().getOrCreateRegion(
-            MapCacheManager::worldToRegion(key.chunkX * 16, key.chunkZ * 16, key.dim)
-        );
+        bool                             needScan = true;
+        std::shared_ptr<RegionCacheData> data     = MapCacheManager::getInstance().getOrCreateRegion(RegionPos(key));
 
-        int localChunkX = key.chunkX - floorDiv(key.chunkX, 16) * 16;
-        int localChunkZ = key.chunkZ - floorDiv(key.chunkZ, 16) * 16;
-
-        if (data && localChunkX >= 0 && localChunkX < 16 && localChunkZ >= 0 && localChunkZ < 16) {
-            std::uint64_t lastScan = data->getChunkLastScanFrame(localChunkX, localChunkZ);
-            if (lastScan > 0) {
-                if ((totalFrames_ - lastScan) < static_cast<std::uint64_t>(cfg.rescanIntervalFrames)) {
-                    needScan = false;
-                    ++deferred;
-                }
-            } else {
-                // 内存中无数据，尝试从磁盘加载
-                // if (loadChunkFromDisk(key, data.get(), localChunkX, localChunkZ)) {
-                //     needScan = false;
-                //     ++deferred;
-                // }
-            }
+        std::uint64_t lastScan = data->getOrCreateChunkData(RegionChunkPos(key))->lastScanFrame;
+        if (lastScan && (totalFrames_ - lastScan) < static_cast<std::uint64_t>(cfg.rescanIntervalFrames)) {
+            needScan = false;
+            ++deferred;
         }
 
         if (needScan) {
-            scanChunk(region, key, minY, maxY);
+            scanChunk(region, key);
             ++processed;
         }
 

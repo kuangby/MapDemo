@@ -1,11 +1,15 @@
-#include "state/RegionRenderer.h"
+#include "RegionRenderer.h"
 
+#include "ShadowRenderBlockInfo.h"
+#include "ShadowRenderData.h"
 #include "config/Config.h"
 #include "mod/MapDemo.h"
+#include "state/pos/RegionChunkPos.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <shared_mutex>
 
 namespace map_demo {
 
@@ -17,9 +21,9 @@ inline int clamp255(int v) { return std::clamp(v, 0, 255); }
 
 inline BlockColor multiplyColor(BlockColor c, float factor) {
     return BlockColor{
-        static_cast<std::uint8_t>(clamp255(static_cast<int>(c.r * factor))),
-        static_cast<std::uint8_t>(clamp255(static_cast<int>(c.g * factor))),
-        static_cast<std::uint8_t>(clamp255(static_cast<int>(c.b * factor))),
+        static_cast<std::uint8_t>(clamp255(static_cast<int>(static_cast<float>(c.r) * factor))),
+        static_cast<std::uint8_t>(clamp255(static_cast<int>(static_cast<float>(c.g) * factor))),
+        static_cast<std::uint8_t>(clamp255(static_cast<int>(static_cast<float>(c.b) * factor))),
         c.a
     };
 }
@@ -27,9 +31,15 @@ inline BlockColor multiplyColor(BlockColor c, float factor) {
 inline BlockColor blendColors(BlockColor base, BlockColor overlay, float overlayFactor) {
     float baseFactor = 1.0f - overlayFactor;
     return BlockColor{
-        static_cast<std::uint8_t>(clamp255(static_cast<int>(base.r * baseFactor + overlay.r * overlayFactor))),
-        static_cast<std::uint8_t>(clamp255(static_cast<int>(base.g * baseFactor + overlay.g * overlayFactor))),
-        static_cast<std::uint8_t>(clamp255(static_cast<int>(base.b * baseFactor + overlay.b * overlayFactor))),
+        static_cast<std::uint8_t>(clamp255(
+            static_cast<int>(static_cast<float>(base.r) * baseFactor + static_cast<float>(overlay.r) * overlayFactor)
+        )),
+        static_cast<std::uint8_t>(clamp255(
+            static_cast<int>(static_cast<float>(base.g) * baseFactor + static_cast<float>(overlay.g) * overlayFactor)
+        )),
+        static_cast<std::uint8_t>(clamp255(
+            static_cast<int>(static_cast<float>(base.b) * baseFactor + static_cast<float>(overlay.b) * overlayFactor)
+        )),
         base.a
     };
 }
@@ -100,11 +110,11 @@ void RegionRenderer::clearQueueAndWait() {
     worker_ = std::thread([this] { workerLoop(); });
 }
 
-void RegionRenderer::requestBake(const std::shared_ptr<RegionData>& data, const RegionPos& pos, int dim) {
+void RegionRenderer::requestBake(const std::shared_ptr<RegionCacheData>& data, const RegionPos& pos, int dim) {
     if (!data) return;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!data->bakedDirty) return;
+        if (!data->isBakedDirty()) return;
         if (pending_.count(pos)) return; // already queued
         pending_.insert(pos);
         queue_.push(BakeTask{data, dim, pos});
@@ -128,7 +138,7 @@ void RegionRenderer::workerLoop() {
 
         baking_.store(true, std::memory_order_release);
         auto t0 = Clock::now();
-        snapshotAndBake(data, task.dim);
+        snapshotAndBake(data, task.pos, task.dim);
         auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
         baking_.store(false, std::memory_order_release);
 
@@ -150,32 +160,23 @@ void RegionRenderer::workerLoop() {
     }
 }
 
-void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionData>& data, int /*dim*/) {
+void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& data, const RegionPos& pos, int /*dim*/) {
     if (!data) return;
 
     // Snapshot raw data under lock, then bake offline without holding the lock
-    ShadowRegion shadow;
-    {
-        std::shared_lock<std::shared_mutex> lock(data->mutex_);
-        if (!data->bakedDirty) return;
-        shadow.terrain = std::vector<BlockColor>(RegionData::PIXELS);
-        shadow.info    = std::vector<BlockRenderInfo>(RegionData::PIXELS);
-        for (int z = 0; z < RegionData::SIZE; ++z) {
-            for (int x = 0; x < RegionData::SIZE; ++x) {
-                int idx             = z * RegionData::SIZE + x;
-                shadow.terrain[idx] = BlockColor{
-                    data->colors[idx * 4 + 0],
-                    data->colors[idx * 4 + 1],
-                    data->colors[idx * 4 + 2],
-                    data->colors[idx * 4 + 3]
-                };
-                BlockRenderInfo bri{};
-                bri.height      = data->heights[idx];
-                bri.solidHeight = data->solidHeights[idx];
-                bri.waterDepth  = data->waterDepths[idx];
-                bri.hasData     = (bri.height > -128);
-                if (bri.waterDepth > 0) bri.waterSurfaceColor = BlockColor{64, 94, 241, 255};
-                shadow.info[idx] = bri;
+    ShadowRenderData shadow(pos);
+    if (!data->isBakedDirty()) return;
+    for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
+        for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+            auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
+            if (!chunkData) return;
+            auto shadowChunkData = shadow.getLocalShadowChunkData(RegionChunkPos{regionChunkX, regionChunkZ});
+            std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
+            for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
+                for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
+                    shadowChunkData->blocksInfo[chunkWorldX][chunkWorldZ] =
+                        ShadowRenderBlockInfo{chunkData->blockData[chunkWorldX][chunkWorldZ]};
+                }
             }
         }
     }
@@ -189,113 +190,124 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionData>& data, in
         applyStyle2(shadow);
     }
 
-    // Write result back
-    {
-        std::unique_lock<std::shared_mutex> lock(data->mutex_);
-        for (int z = 0; z < RegionData::SIZE; ++z) {
-            for (int x = 0; x < RegionData::SIZE; ++x) {
-                int  idx                       = z * RegionData::SIZE + x;
-                auto c                         = shadow.terrain[idx];
-                data->bakedColors[idx * 4 + 0] = c.r;
-                data->bakedColors[idx * 4 + 1] = c.g;
-                data->bakedColors[idx * 4 + 2] = c.b;
-                data->bakedColors[idx * 4 + 3] = c.a;
+    for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
+        for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+            auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
+            if (!chunkData) continue;
+            auto                                shadowChunkData = shadow.handlingRegion[regionChunkX][regionChunkZ];
+            std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
+            for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
+                for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
+                    chunkData->blockData[chunkWorldX][chunkWorldZ].bakedColor =
+                        shadowChunkData->blocksInfo[chunkWorldX][chunkWorldZ].color;
+                }
             }
         }
-        data->bakedDirty = false;
     }
 }
 
-void RegionRenderer::copyRegionToShadow(const RegionData* data, ShadowRegion& shadow, int /*dim*/) {
-    for (int z = 0; z < ShadowRegion::SIZE; ++z) {
-        for (int x = 0; x < ShadowRegion::SIZE; ++x) {
-            shadow.setPixel(x, z, data->getPixel(x, z));
+// void RegionRenderer::copyRegionToShadow(const RegionCacheData* data, ShadowRegion& shadow, int /*dim*/) {
+//     for (int z = 0; z < ShadowRegion::SIZE; ++z) {
+//         for (int x = 0; x < ShadowRegion::SIZE; ++x) {
+//             shadow.setPixel(x, z, data->getPixel(x, z));
 
-            BlockRenderInfo bri{};
-            bri.height      = data->getHeight(x, z);
-            bri.solidHeight = data->getSolidHeight(x, z);
-            bri.waterDepth  = data->getWaterDepth(x, z);
-            bri.hasData     = (bri.height > -128);
+//             BlockRenderInfo bri{};
+//             bri.height      = data->getHeight(x, z);
+//             bri.solidHeight = data->getSolidHeight(x, z);
+//             bri.waterDepth  = data->getWaterDepth(x, z);
+//             bri.hasData     = (bri.height > -128);
 
-            if (bri.waterDepth > 0) {
-                bri.waterSurfaceColor = BlockColor{64, 94, 241, 255};
-            }
+//             if (bri.waterDepth > 0) {
+//                 bri.waterSurfaceColor = BlockColor{64, 94, 241, 255};
+//             }
 
-            shadow.setInfo(x, z, bri);
-        }
-    }
-}
+//             shadow.setInfo(x, z, bri);
+//         }
+//     }
+// }
 
-void RegionRenderer::bake(const RegionData* data, BlockColor* output, int dim) {
-    if (!data || !output) return;
-    auto t0 = Clock::now();
+// void RegionRenderer::bake(const RegionData* data, BlockColor* output, int dim) {
+//     if (!data || !output) return;
+//     auto t0 = Clock::now();
 
-    ShadowRegion shadow;
-    copyRegionToShadow(data, shadow, dim);
+//     ShadowRegion shadow;
+//     copyRegionToShadow(data, shadow, dim);
 
-    auto& cfg = config::getConfig().terrain.shadow;
-    if (cfg.renderStyle == 1) {
-        if (cfg.transparentWater) applyWaterOverlay(shadow);
-        applyStyle1(shadow);
-    } else if (cfg.renderStyle == 2) {
-        applyStyle2(shadow);
-    } else {
-        if (cfg.transparentWater) applyWaterOverlay(shadow);
-    }
+//     auto& cfg = config::getConfig().terrain.shadow;
+//     if (cfg.renderStyle == 1) {
+//         if (cfg.transparentWater) applyWaterOverlay(shadow);
+//         applyStyle1(shadow);
+//     } else if (cfg.renderStyle == 2) {
+//         applyStyle2(shadow);
+//     } else {
+//         if (cfg.transparentWater) applyWaterOverlay(shadow);
+//     }
 
-    for (int z = 0; z < ShadowRegion::SIZE; ++z) {
-        for (int x = 0; x < ShadowRegion::SIZE; ++x) {
-            output[z * ShadowRegion::SIZE + x] = shadow.getPixel(x, z);
-        }
-    }
+//     for (int z = 0; z < ShadowRegion::SIZE; ++z) {
+//         for (int x = 0; x < ShadowRegion::SIZE; ++x) {
+//             output[z * ShadowRegion::SIZE + x] = shadow.getPixel(x, z);
+//         }
+//     }
 
-    auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
-    if (totalUs > 30000) {
-        MapDemo::getInstance().getSelf().getLogger().debug(
-            "RegionRenderer::bake sync slow style={}, time={}us",
-            cfg.renderStyle,
-            totalUs
-        );
-    }
-}
+//     auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
+//     if (totalUs > 30000) {
+//         MapDemo::getInstance().getSelf().getLogger().debug(
+//             "RegionRenderer::bake sync slow style={}, time={}us",
+//             cfg.renderStyle,
+//             totalUs
+//         );
+//     }
+// }
 
 // Style 1: simple heightmap gradient shadow, light from northwest
-void RegionRenderer::applyStyle1(ShadowRegion& shadow) {
+void RegionRenderer::applyStyle1(ShadowRenderRegionData& shadow) {
     auto& cfg   = config::getConfig().terrain.shadow;
     int   level = cfg.shadowLevel;
     if (level <= 0) level = 100;
 
-    for (int z = 0; z < ShadowRegion::SIZE; ++z) {
-        for (int x = 0; x < ShadowRegion::SIZE; ++x) {
-            if (!shadow.hasData(x, z)) continue;
+    // for (int z = 0; z < ShadowRegion::SIZE; ++z) {
+    //     for (int x = 0; x < ShadowRegion::SIZE; ++x) {
+    //         if (!shadow.hasData(x, z)) continue;
 
-            int16_t cur = shadow.getHeight(x, z);
-            int16_t sum = cur * 2;
-            if (x == 0 && z != 0) {
-                sum = shadow.getHeight(x, z - 1) * 2;
-            } else if (x != 0 && z == 0) {
-                sum = shadow.getHeight(x - 1, z) * 2;
-            } else if (x != 0 && z != 0) {
-                sum = shadow.getHeight(x, z - 1) + shadow.getHeight(x - 1, z);
-            }
+    //         int16_t cur = shadow.getHeight(x, z);
+    //         int16_t sum = cur * 2;
+    //         if (x == 0 && z != 0) {
+    //             sum = shadow.getHeight(x, z - 1) * 2;
+    //         } else if (x != 0 && z == 0) {
+    //             sum = shadow.getHeight(x - 1, z) * 2;
+    //         } else if (x != 0 && z != 0) {
+    //             sum = shadow.getHeight(x, z - 1) + shadow.getHeight(x - 1, z);
+    //         }
 
-            BlockColor c = shadow.getPixel(x, z);
-            if (cur * 2 > sum) {
-                c = BlockColor{
-                    static_cast<std::uint8_t>(clamp255(c.r * level / 100)),
-                    static_cast<std::uint8_t>(clamp255(c.g * level / 100)),
-                    static_cast<std::uint8_t>(clamp255(c.b * level / 100)),
-                    c.a
-                };
-            } else if (cur * 2 < sum) {
-                c = BlockColor{
-                    static_cast<std::uint8_t>(clamp255(c.r * 100 / level)),
-                    static_cast<std::uint8_t>(clamp255(c.g * 100 / level)),
-                    static_cast<std::uint8_t>(clamp255(c.b * 100 / level)),
-                    c.a
-                };
+    //         BlockColor c = shadow.getPixel(x, z);
+    //         if (cur * 2 > sum) {
+    //             c = BlockColor{
+    //                 static_cast<std::uint8_t>(clamp255(c.r * level / 100)),
+    //                 static_cast<std::uint8_t>(clamp255(c.g * level / 100)),
+    //                 static_cast<std::uint8_t>(clamp255(c.b * level / 100)),
+    //                 c.a
+    //             };
+    //         } else if (cur * 2 < sum) {
+    //             c = BlockColor{
+    //                 static_cast<std::uint8_t>(clamp255(c.r * 100 / level)),
+    //                 static_cast<std::uint8_t>(clamp255(c.g * 100 / level)),
+    //                 static_cast<std::uint8_t>(clamp255(c.b * 100 / level)),
+    //                 c.a
+    //             };
+    //     }
+    // }
+    for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
+        for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+            // if (!shadow.hasData(x, z)) continue;
+            auto shadowChunkData = shadow.handlingRegion[regionChunkX][regionChunkZ];
+            if (!shadowChunkData) continue;
+            for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
+                for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
+                    auto& blockInfo = shadowChunkData->blocksInfo[chunkWorldX][chunkWorldZ];
+                    auto  cur       = blockInfo.height;
+                    auto  sum       = cur * 2;
+                }
             }
-            shadow.setPixel(x, z, c);
         }
     }
 }

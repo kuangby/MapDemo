@@ -3,10 +3,12 @@
 #include "config/Config.h"
 #include "state/BlockColorManager.h"
 
+#include "mc/world/level/dimension/Dimension.h"
 #include <mc/world/level/ChunkBlockPos.h>
 #include <mc/world/level/ChunkLocalHeight.h>
 #include <mc/world/level/biome/Biome.h>
 #include <mc/world/level/block/Block.h>
+
 
 namespace map_demo {
 
@@ -137,32 +139,36 @@ BlockColor processWater(LevelChunk* chunk, int cx, int cz, int waterSurfaceY, in
 }
 
 // 基于 cameraHeight 的方块颜色获取，同时返回高度信息
-BlockColor
-getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeight, int minY, int maxY, int dim) {
+BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight) {
+    int minY  = chunk->mMin->y;
+    int maxY  = chunk->mMax->y;
+    int dimId = chunk->mDimension.getDimensionId();
+
     // 高度信息
-    int surfaceHeight = (*chunk->mHeightmap)[16 * cz + cx].mVal + minY;
+    int surfaceHeight = (*chunk->mHeightmap)[16 * pos.z + pos.x].mVal + minY;
 
     // 检查 cameraHeight 是否在有效范围内
     if (cameraHeight < minY) {
-        return getBiomeFallbackColor(
-            getBiomeName(chunk, ChunkBlockPos(static_cast<uchar>(cx), ChunkLocalHeight{0}, static_cast<uchar>(cz)))
-        );
+        return getBiomeFallbackColor(getBiomeName(
+            chunk,
+            ChunkBlockPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z))
+        ));
     }
 
     auto getBlockName = [&](int y) -> std::string {
         ChunkBlockPos localPos(
-            static_cast<uchar>(cx),
+            static_cast<uchar>(pos.x),
             ChunkLocalHeight{static_cast<short>(y - minY)},
-            static_cast<uchar>(cz)
+            static_cast<uchar>(pos.z)
         );
         return chunk->getBlock(localPos).getTypeName();
     };
 
     auto blockColorAt = [&](int y) -> BlockColor {
         ChunkBlockPos localPos(
-            static_cast<uchar>(cx),
+            static_cast<uchar>(pos.x),
             ChunkLocalHeight{static_cast<short>(y - minY)},
-            static_cast<uchar>(cz)
+            static_cast<uchar>(pos.z)
         );
         return getBlockColorWithBiome(chunk->getBlock(localPos).getTypeName(), getBiomeName(chunk, localPos));
     };
@@ -181,14 +187,14 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeigh
                     std::string surfaceName = getBlockName(y - 1);
 
                     if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-                        return processWater(chunk, cx, cz, y - 1, minY);
+                        return processWater(chunk, pos.x, pos.z, y - 1, minY);
                     }
 
                     return blockColorAt(y - 1);
                 }
                 return getBiomeFallbackColor(getBiomeName(
                     chunk,
-                    ChunkBlockPos(static_cast<uchar>(cx), ChunkLocalHeight{0}, static_cast<uchar>(cz))
+                    ChunkBlockPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z))
                 ));
             }
         }
@@ -197,7 +203,7 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeigh
         std::string surfaceName = getBlockName(maxY);
 
         if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-            return processWater(chunk, cx, cz, maxY, minY);
+            return processWater(chunk, pos.x, pos.z, maxY, minY);
         }
 
         return blockColorAt(maxY);
@@ -221,14 +227,14 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeigh
 
                         // 透明水效果
                         if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-                            return processWater(chunk, cx, cz, y - 1, minY);
+                            return processWater(chunk, pos.x, pos.z, y - 1, minY);
                         }
 
                         return blockColorAt(y - 1);
                     }
                     return getBiomeFallbackColor(getBiomeName(
                         chunk,
-                        ChunkBlockPos(static_cast<uchar>(cx), ChunkLocalHeight{0}, static_cast<uchar>(cz))
+                        ChunkBlockPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z))
                     ));
                 }
             }
@@ -237,7 +243,7 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeigh
             std::string surfaceName = getBlockName(cameraHeight);
 
             if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-                return processWater(chunk, cx, cz, cameraHeight, minY);
+                return processWater(chunk, pos.x, pos.z, cameraHeight, minY);
             }
 
             return blockColorAt(cameraHeight);
@@ -249,19 +255,20 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeigh
                 if (name != "minecraft:air" && name != "air") {
                     // 找到非空气方块
                     if (config::getConfig().terrain.enableTransparentWater && name == "minecraft:water") {
-                        return processWater(chunk, cx, cz, y, minY);
+                        return processWater(chunk, pos.x, pos.z, y, minY);
                     }
                     return blockColorAt(y);
                 }
             }
-            return getBiomeFallbackColor(
-                getBiomeName(chunk, ChunkBlockPos(static_cast<uchar>(cx), ChunkLocalHeight{0}, static_cast<uchar>(cz)))
-            );
+            return getBiomeFallbackColor(getBiomeName(
+                chunk,
+                ChunkBlockPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z))
+            ));
         }
     }
 
     // 情况 2: cameraHeight 处不是空气，判断透明度
-    bool isOpaque = isBlockOpaque(cameraName, dim);
+    bool isOpaque = isBlockOpaque(cameraName, dimId);
 
     if (isOpaque) {
         // 不透明：跳过第一段连续的不透明方块，找到第一个半透明方块
@@ -277,34 +284,35 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeigh
                     if (airBelowName != "minecraft:air" && airBelowName != "air") {
                         // 找到空气下方的第一个方块
                         if (config::getConfig().terrain.enableTransparentWater && airBelowName == "minecraft:water") {
-                            return processWater(chunk, cx, cz, y2, minY);
+                            return processWater(chunk, pos.x, pos.z, y2, minY);
                         }
                         return blockColorAt(y2);
                     }
                 }
                 return getBiomeFallbackColor(getBiomeName(
                     chunk,
-                    ChunkBlockPos(static_cast<uchar>(cx), ChunkLocalHeight{0}, static_cast<uchar>(cz))
+                    ChunkBlockPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z))
                 ));
             }
 
-            bool currentOpaque = isBlockOpaque(name, dim);
+            bool currentOpaque = isBlockOpaque(name, dimId);
             if (!currentOpaque) {
                 // 找到半透明方块，直接显示
                 if (config::getConfig().terrain.enableTransparentWater && name == "minecraft:water") {
-                    return processWater(chunk, cx, cz, y, minY);
+                    return processWater(chunk, pos.x, pos.z, y, minY);
                 }
                 return blockColorAt(y);
             }
             // 不透明方块，继续向下（跳过第一段连续的不透明方块）
         }
-        return getBiomeFallbackColor(
-            getBiomeName(chunk, ChunkBlockPos(static_cast<uchar>(cx), ChunkLocalHeight{0}, static_cast<uchar>(cz)))
-        );
+        return getBiomeFallbackColor(getBiomeName(
+            chunk,
+            ChunkBlockPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z))
+        ));
     } else {
         // 半透明：直接显示这个方块
         if (config::getConfig().terrain.enableTransparentWater && cameraName == "minecraft:water") {
-            return processWater(chunk, cx, cz, cameraHeight, minY);
+            return processWater(chunk, pos.x, pos.z, cameraHeight, minY);
         }
         return blockColorAt(cameraHeight);
     }

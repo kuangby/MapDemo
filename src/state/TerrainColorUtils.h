@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pos/ChunkWorldPos.h"
 #include "state/BlockColorManager.h"
 
 #include <mc/world/level/ChunkBlockPos.h>
@@ -34,7 +35,6 @@ struct TerrainPixelInfo {
 };
 
 // 基于 cameraHeight 的方块颜色获取，同时返回高度信息
-BlockColor
-getTerrainPixelAtCameraHeight(LevelChunk* chunk, int cx, int cz, int cameraHeight, int minY, int maxY, int dim);
+BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight);
 
 } // namespace map_demo

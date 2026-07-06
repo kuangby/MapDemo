@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pos/ChunkPosWithDim.h"
+#include "data/pos/ChunkPosWithDim.h"
 
 #include <ll/api/data/KeyValueDB.h>
 #include <mc/world/level/BlockSource.h>

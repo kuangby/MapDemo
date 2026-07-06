@@ -1,7 +1,8 @@
 #pragma once
 
-#include "pos/ChunkWorldPos.h"
-#include "state/BlockColorManager.h"
+#include "data/BlockColor.h"
+#include "data/pos/ChunkWorldPos.h"
+
 
 #include <mc/world/level/ChunkBlockPos.h>
 #include <mc/world/level/chunk/LevelChunk.h>

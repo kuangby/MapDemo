@@ -4,8 +4,9 @@
 #include "helper/HookRegistry.h"
 #include "ll/api/mod/RegisterHelper.h"
 #include "state/BlockColorManager.h"
-#include "state/RegionRenderer.h"
 #include "state/TerrainScanner.h"
+#include "state/render/RegionRenderer.h"
+
 
 #include <filesystem>
 

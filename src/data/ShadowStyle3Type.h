@@ -1,8 +1,9 @@
 #pragma once
 
-
 #include <array>
 #include <vector>
+
+
 namespace map_demo {
 enum class ShadowStyle3Type : int {
     None                 = 0,

@@ -1,14 +1,14 @@
 #include "state/TerrainScanner.h"
 
 #include "config/Config.h"
+#include "data/cache/MapCacheManager.h"
+#include "data/pos/ChunkPosWithDim.h"
+#include "data/pos/ChunkWorldPos.h"
+#include "data/pos/RegionChunkPos.h"
+#include "data/pos/RegionPos.h"
 #include "mod/MapDemo.h"
-#include "pos/ChunkPosWithDim.h"
-#include "pos/ChunkWorldPos.h"
-#include "pos/RegionChunkPos.h"
-#include "pos/RegionPos.h"
-#include "state/BlockColorManager.h"
 #include "state/TerrainColorUtils.h"
-#include "state/cache/MapCacheManager.h"
+
 
 #include "mc/world/level/dimension/Dimension.h"
 #include <mc/world/level/BlockSource.h>
@@ -215,7 +215,7 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
 
                 int idx = chunkWorldPosZ * 16 + chunkWorldPosX;
 
-                auto& currentBlockData = chunkData->blockData[chunkWorldPosX][chunkWorldPosZ];
+                auto& currentBlockData = chunkData->blocksData[chunkWorldPosX][chunkWorldPosZ];
 
                 if (!chunkData->loadChunkBaseData) {
 

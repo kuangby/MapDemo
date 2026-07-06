@@ -2,8 +2,9 @@
 
 
 #include "BlockCacheData.h"
-#include "state/BlockColorManager.h"
-#include "state/pos/ChunkWorldPos.h"
+#include "data/BlockDataBase.h"
+#include "data/ChunkDataBase.h"
+#include "data/pos/ChunkWorldPos.h"
 
 #include <array>
 #include <shared_mutex>
@@ -11,13 +12,13 @@
 
 namespace map_demo {
 
-class ChunkCacheData {
+class ChunkCacheData : public ChunkDataBase {
 public:
     std::uint64_t lastScanFrame = 0;
 
     bool                                           loadChunkBaseData = false;
     bool                                           loadBakedColors   = false;
-    std::array<std::array<BlockCacheData, 16>, 16> blockData; // need to save
+    std::array<std::array<BlockCacheData, 16>, 16> blocksData; // need to save
 
     mutable std::shared_mutex mutex_; // protects all fields above
 
@@ -28,5 +29,7 @@ public:
 
     [[nodiscard]] const BlockCacheData& getBlockCacheData(const ChunkWorldPos& pos) const;
     [[nodiscard]] BlockCacheData        getBlockCacheData(const ChunkWorldPos& pos);
+
+    [[nodiscard]] const BlockDataBase& getBlockBaseData(const ChunkWorldPos& pos) const override;
 };
 } // namespace map_demo

@@ -1,9 +1,9 @@
 #include "MapCacheManager.h"
 
+#include "data/pos/ChunkPosWithDim.h"
+#include "data/pos/ChunkWorldPos.h"
+#include "data/pos/RegionChunkPos.h"
 #include "mod/MapDemo.h"
-#include "state/pos/ChunkPosWithDim.h"
-#include "state/pos/ChunkWorldPos.h"
-#include "state/pos/RegionChunkPos.h"
 
 
 namespace map_demo {

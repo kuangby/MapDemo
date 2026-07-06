@@ -1,14 +1,13 @@
 #pragma once
 
-#include "state/BlockColorManager.h"
-#include "state/cache/ChunkCacheData.h"
-#include "state/cache/RegionCacheData.h"
-#include "state/pos/ChunkPosWithDim.h"
-#include "state/pos/WorldPos.h"
-
-
-#include "state/pos/RegionPos.h"
+#include "data/cache/ChunkCacheData.h"
+#include "data/cache/RegionCacheData.h"
+#include "data/pos/ChunkPosWithDim.h"
+#include "data/pos/RegionPos.h"
+#include "data/pos/WorldPos.h"
 #include <ll/api/data/KeyValueDB.h>
+
+
 #include <memory>
 #include <mutex>
 #include <unordered_map>

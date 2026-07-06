@@ -1,9 +1,8 @@
 #pragma once
 
-#include "state/BlockColorManager.h"
-#include "state/cache/RegionCacheData.h"
-#include "state/pos/RegionPos.h"
-#include "state/render/ShadowRenderData.h"
+#include "data/cache/RegionCacheData.h"
+#include "data/pos/RegionPos.h"
+#include "data/shadowRender/ShadowRenderData.h"
 
 
 #include <atomic>

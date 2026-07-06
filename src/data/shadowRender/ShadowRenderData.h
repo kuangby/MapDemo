@@ -1,14 +1,14 @@
 #pragma once
 
 
-#include "state/cache/BlockCacheData.h"
-#include "state/cache/ChunkCacheData.h"
-#include "state/pos/ChunkPosWithDim.h"
-#include "state/pos/ChunkWorldPos.h"
-#include "state/pos/RegionChunkPos.h"
-#include "state/pos/RegionPos.h"
-#include "state/pos/WorldPos.h"
-#include "state/render/ShadowRenderChunkInfo.h"
+#include "data/ChunkDataBase.h"
+#include "data/cache/ChunkCacheData.h"
+#include "data/pos/ChunkPosWithDim.h"
+#include "data/pos/ChunkWorldPos.h"
+#include "data/pos/RegionChunkPos.h"
+#include "data/pos/RegionPos.h"
+#include "data/pos/WorldPos.h"
+#include "data/shadowRender/ShadowRenderChunkData.h"
 
 
 #include <array>
@@ -19,7 +19,8 @@
 
 namespace map_demo {
 // 用于阴影烘焙的区域辅助结构，16x16 chunks
-struct ShadowRenderData {
+class ShadowRenderData {
+public:
     // static constexpr int SIZE   = RegionCacheData::SIZE; // 256
     // static constexpr int CHUNKS = RegionCacheData::CHUNKS; // 16
     // static constexpr int PIXELS = SIZE * SIZE;
@@ -27,19 +28,21 @@ struct ShadowRenderData {
     // std::vector<BlockColor>      terrain; // 256x256 RGBA
     // std::vector<BlockRenderInfo> info;    // 256x256 per-pixel info
     RegionPos                                                              handlingRegionPos;
-    std::array<std::array<std::shared_ptr<ShadowRenderChunkInfo>, 16>, 16> handlingRegion; // 16x16 chunks
-    std::unordered_map<ChunkPosWithDim, std::unique_ptr<const ChunkCacheData>>
+    std::array<std::array<std::shared_ptr<ShadowRenderChunkData>, 16>, 16> handlingRegion; // 16x16 chunks
+    std::unordered_map<ChunkPosWithDim, std::shared_ptr<const ChunkCacheData>>
         helperChunksData; // <offsetChunkPos, ChunkCacheData>
 
+public:
     explicit ShadowRenderData(const RegionPos& pos) : handlingRegionPos(pos) {
         for (auto& row : handlingRegion) {
             for (auto& chunk : row) {
-                chunk = std::make_shared<ShadowRenderChunkInfo>();
+                chunk = std::make_shared<ShadowRenderChunkData>();
             }
         }
     }
 
-    [[nodiscard]] std::shared_ptr<ShadowRenderChunkInfo> getLocalShadowChunkData(const RegionChunkPos& chunkPos) {
+public:
+    [[nodiscard]] std::shared_ptr<ShadowRenderChunkData> getLocalShadowChunkData(const RegionChunkPos& chunkPos) {
         return handlingRegion[chunkPos.x][chunkPos.z];
     }
 
@@ -52,13 +55,21 @@ struct ShadowRenderData {
     //     return it->second;
     // }
 
-    [[nodiscard]] std::optional<BlockCacheData> getBlockBaseInfo(const WorldPos& offsetPos) {
+    [[nodiscard]] std::optional<BlockDataBase> getBlockBaseData(const WorldPos& offsetPos) {
         if (offsetPos.x >= 0 && offsetPos.x < 256 && offsetPos.z >= 0 && offsetPos.z < 256)
-            return getLocalShadowChunkData(RegionChunkPos{offsetPos})->getBlockBaseInfo(ChunkWorldPos{offsetPos});
+            return getLocalShadowChunkData(RegionChunkPos{offsetPos})->getBlockBaseData(ChunkWorldPos{offsetPos});
         // auto offsetRegionPos = RegionPos{offsetPos};
         auto it = helperChunksData.find(ChunkPosWithDim{offsetPos});
         if (it == helperChunksData.end()) return std::nullopt;
         return it->second->getBlockCacheData(ChunkWorldPos{offsetPos});
+    }
+
+    [[nodiscard]] std::shared_ptr<const ChunkDataBase> getChunk(const WorldPos& offsetPos) {
+        if (offsetPos.x >= 0 && offsetPos.x < 256 && offsetPos.z >= 0 && offsetPos.z < 256)
+            return getLocalShadowChunkData(RegionChunkPos{offsetPos});
+        auto it = helperChunksData.find(ChunkPosWithDim{offsetPos});
+        if (it == helperChunksData.end()) return nullptr;
+        return it->second;
     }
 
     // [[nodiscard]] BlockColor getPixel(int x, int z) const {

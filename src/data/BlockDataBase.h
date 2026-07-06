@@ -1,14 +1,16 @@
 #pragma once
 
-#include "state/BlockColorManager.h"
+#include "data/BlockColor.h"
 
 
 namespace map_demo {
-class BlockCacheData {
+class BlockDataBase {
 public:
     BlockColor color;
     short      height      = -128;
     short      solidHeight = -128;
-    BlockColor bakedColor;
+
+public:
+    virtual ~BlockDataBase() = default;
 };
 } // namespace map_demo

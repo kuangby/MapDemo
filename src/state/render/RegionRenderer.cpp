@@ -1,10 +1,10 @@
 #include "RegionRenderer.h"
 
-#include "ShadowRenderBlockInfo.h"
-#include "ShadowRenderData.h"
 #include "config/Config.h"
+#include "data/pos/RegionChunkPos.h"
+#include "data/shadowRender/ShadowRenderData.h"
 #include "mod/MapDemo.h"
-#include "state/pos/RegionChunkPos.h"
+
 
 #include <algorithm>
 #include <chrono>
@@ -174,8 +174,8 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
             std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
             for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
                 for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
-                    shadowChunkData->blocksInfo[chunkWorldX][chunkWorldZ] =
-                        ShadowRenderBlockInfo{chunkData->blockData[chunkWorldX][chunkWorldZ]};
+                    shadowChunkData->blocksData[chunkWorldX][chunkWorldZ] =
+                        ShadowRenderBlockData{chunkData->blockData[chunkWorldX][chunkWorldZ]};
                 }
             }
         }
@@ -199,7 +199,7 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
             for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
                 for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
                     chunkData->blockData[chunkWorldX][chunkWorldZ].bakedColor =
-                        shadowChunkData->blocksInfo[chunkWorldX][chunkWorldZ].color;
+                        shadowChunkData->blocksData[chunkWorldX][chunkWorldZ].color;
                 }
             }
         }
@@ -260,7 +260,7 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
 // }
 
 // Style 1: simple heightmap gradient shadow, light from northwest
-void RegionRenderer::applyStyle1(ShadowRenderRegionData& shadow) {
+void RegionRenderer::applyStyle1(ShadowRenderData& shadow) {
     auto& cfg   = config::getConfig().terrain.shadow;
     int   level = cfg.shadowLevel;
     if (level <= 0) level = 100;
@@ -303,7 +303,7 @@ void RegionRenderer::applyStyle1(ShadowRenderRegionData& shadow) {
             if (!shadowChunkData) continue;
             for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
                 for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
-                    auto& blockInfo = shadowChunkData->blocksInfo[chunkWorldX][chunkWorldZ];
+                    auto& blockInfo = shadowChunkData->blocksData[chunkWorldX][chunkWorldZ];
                     auto  cur       = blockInfo.height;
                     auto  sum       = cur * 2;
                 }

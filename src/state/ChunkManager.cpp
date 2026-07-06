@@ -7,17 +7,17 @@ ChunkManager& ChunkManager::getInstance() {
     return instance;
 }
 
-std::vector<ChunkPos> ChunkManager::getVisibleChunks(int centerChunkX, int centerChunkZ, int radiusChunks) const {
-    std::vector<ChunkPos> result;
-    result.reserve(static_cast<size_t>((radiusChunks * 2 + 1) * (radiusChunks * 2 + 1)));
+// std::vector<ChunkPos> ChunkManager::getVisibleChunks(int centerChunkX, int centerChunkZ, int radiusChunks) const {
+//     std::vector<ChunkPos> result;
+//     result.reserve(static_cast<size_t>((radiusChunks * 2 + 1) * (radiusChunks * 2 + 1)));
 
-    for (int dx = -radiusChunks; dx <= radiusChunks; ++dx) {
-        for (int dz = -radiusChunks; dz <= radiusChunks; ++dz) {
-            result.push_back({centerChunkX + dx, centerChunkZ + dz});
-        }
-    }
-    return result;
-}
+//     for (int dx = -radiusChunks; dx <= radiusChunks; ++dx) {
+//         for (int dz = -radiusChunks; dz <= radiusChunks; ++dz) {
+//             result.push_back({centerChunkX + dx, centerChunkZ + dz});
+//         }
+//     }
+//     return result;
+// }
 
 ChunkBounds ChunkManager::getChunkBounds(int chunkX, int chunkZ) {
     return {

@@ -1,6 +1,8 @@
 #include "RegionRenderer.h"
 
 #include "config/Config.h"
+#include "data/pos/ChunkPosWithDim.h"
+#include "data/pos/ChunkWorldPos.h"
 #include "data/pos/RegionChunkPos.h"
 #include "data/shadowRender/ShadowRenderData.h"
 #include "mod/MapDemo.h"
@@ -9,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <memory>
 #include <shared_mutex>
 
 namespace map_demo {
@@ -166,18 +169,12 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
     // Snapshot raw data under lock, then bake offline without holding the lock
     ShadowRenderData shadow(pos);
     if (!data->isBakedDirty()) return;
-    for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
-        for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+    for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+        for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             if (!chunkData) return;
-            auto shadowChunkData = shadow.getLocalShadowChunkData(RegionChunkPos{regionChunkX, regionChunkZ});
             std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
-            for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
-                for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
-                    shadowChunkData->blocksData[chunkWorldX][chunkWorldZ] =
-                        ShadowRenderBlockData{chunkData->blockData[chunkWorldX][chunkWorldZ]};
-                }
-            }
+            shadow.handlingRegion[regionChunkZ][regionChunkX] = std::make_shared<ShadowRenderChunkData>(chunkData);
         }
     }
 
@@ -190,16 +187,16 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
         applyStyle2(shadow);
     }
 
-    for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
-        for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+    for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+        for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             if (!chunkData) continue;
-            auto                                shadowChunkData = shadow.handlingRegion[regionChunkX][regionChunkZ];
+            auto                                shadowChunkData = shadow.handlingRegion[regionChunkZ][regionChunkX];
             std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
-            for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
-                for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
-                    chunkData->blockData[chunkWorldX][chunkWorldZ].bakedColor =
-                        shadowChunkData->blocksData[chunkWorldX][chunkWorldZ].color;
+            for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
+                for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
+                    chunkData->blocksData[chunkWorldZ][chunkWorldX].bakedColor =
+                        shadowChunkData->blocksData[chunkWorldZ][chunkWorldX].color;
                 }
             }
         }
@@ -296,18 +293,48 @@ void RegionRenderer::applyStyle1(ShadowRenderData& shadow) {
     //             };
     //     }
     // }
-    for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
-        for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+    for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
+        auto westChunk = shadow.getChunk(ChunkPosWithDim(-1, regionChunkZ));
+        for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             // if (!shadow.hasData(x, z)) continue;
-            auto shadowChunkData = shadow.handlingRegion[regionChunkX][regionChunkZ];
-            if (!shadowChunkData) continue;
-            for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
-                for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
-                    auto& blockInfo = shadowChunkData->blocksData[chunkWorldX][chunkWorldZ];
+            auto shadowChunkData = shadow.handlingRegion[regionChunkZ][regionChunkX];
+            if (!shadowChunkData) {
+                westChunk = shadowChunkData;
+                continue;
+            }
+            auto northChunk = shadow.getChunk(ChunkPosWithDim(regionChunkX, regionChunkZ - 1));
+            for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
+                for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
+                    auto& blockInfo = shadowChunkData->blocksData[chunkWorldZ][chunkWorldX];
                     auto  cur       = blockInfo.height;
-                    auto  sum       = cur * 2;
+                    int   sum       = 0;
+                    if (!chunkWorldX) {
+                        if (!westChunk) sum += cur;
+                        else sum += westChunk->getBlockBaseData(ChunkWorldPos(15, chunkWorldZ)).height;
+                    }
+                    if (!chunkWorldZ) {
+                        if (!northChunk) sum += cur;
+                        else sum += northChunk->getBlockBaseData(ChunkWorldPos(chunkWorldX, 15)).height;
+                    }
+                    BlockColor c = blockInfo.color;
+                    if (cur * 2 > sum) {
+                        c = BlockColor{
+                            static_cast<std::uint8_t>(clamp255(c.r * level / 100)),
+                            static_cast<std::uint8_t>(clamp255(c.g * level / 100)),
+                            static_cast<std::uint8_t>(clamp255(c.b * level / 100)),
+                            c.a
+                        };
+                    } else if (cur * 2 < sum) {
+                        c = BlockColor{
+                            static_cast<std::uint8_t>(clamp255(c.r * 100 / level)),
+                            static_cast<std::uint8_t>(clamp255(c.g * 100 / level)),
+                            static_cast<std::uint8_t>(clamp255(c.b * 100 / level)),
+                            c.a
+                        };
+                    }
                 }
             }
+            westChunk = shadowChunkData;
         }
     }
 }

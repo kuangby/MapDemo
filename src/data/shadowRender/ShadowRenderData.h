@@ -33,17 +33,11 @@ public:
         helperChunksData; // <offsetChunkPos, ChunkCacheData>
 
 public:
-    explicit ShadowRenderData(const RegionPos& pos) : handlingRegionPos(pos) {
-        for (auto& row : handlingRegion) {
-            for (auto& chunk : row) {
-                chunk = std::make_shared<ShadowRenderChunkData>();
-            }
-        }
-    }
+    explicit ShadowRenderData(const RegionPos& pos) : handlingRegionPos(pos) {}
 
 public:
     [[nodiscard]] std::shared_ptr<ShadowRenderChunkData> getLocalShadowChunkData(const RegionChunkPos& chunkPos) {
-        return handlingRegion[chunkPos.x][chunkPos.z];
+        return handlingRegion[chunkPos.z][chunkPos.x];
     }
 
     // [[nodiscard]] std::shared_ptr<RegionCacheData> getHelperRegion(const RegionPos& offsetPos) {
@@ -65,9 +59,13 @@ public:
     }
 
     [[nodiscard]] std::shared_ptr<const ChunkDataBase> getChunk(const WorldPos& offsetPos) {
-        if (offsetPos.x >= 0 && offsetPos.x < 256 && offsetPos.z >= 0 && offsetPos.z < 256)
+        return getChunk(ChunkPosWithDim(offsetPos));
+    }
+
+    [[nodiscard]] std::shared_ptr<const ChunkDataBase> getChunk(const ChunkPosWithDim& offsetPos) {
+        if (offsetPos.x >= 0 && offsetPos.x < 16 && offsetPos.z >= 0 && offsetPos.z < 16)
             return getLocalShadowChunkData(RegionChunkPos{offsetPos});
-        auto it = helperChunksData.find(ChunkPosWithDim{offsetPos});
+        auto it = helperChunksData.find(offsetPos);
         if (it == helperChunksData.end()) return nullptr;
         return it->second;
     }

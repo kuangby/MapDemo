@@ -26,11 +26,11 @@ public:
 
 public:
     [[nodiscard]] const ShadowRenderBlockData& getBlockData(const ChunkWorldPos& pos) {
-        return blocksData[pos.x][pos.z];
+        return blocksData[pos.z][pos.x];
     }
 
     [[nodiscard]] const BlockDataBase& getBlockBaseData(const ChunkWorldPos& pos) const override {
-        return blocksData[pos.x][pos.z];
+        return blocksData[pos.z][pos.x];
     }
 };
 } // namespace map_demo

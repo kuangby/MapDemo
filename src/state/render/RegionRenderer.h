@@ -54,8 +54,16 @@ private:
     void applyBevel(ShadowRenderData& shadow, int scale);
 
     // 上采样辅助
-    void upscale(const ShadowRenderData& src, std::vector<BlockColor>& dst, int scale, int dstSize);
-    void downsample(const std::vector<BlockColor>& src, ShadowRenderData& dst, int scale, int srcSize);
+    void upscale(
+        const ShadowRenderData&                                                                               src,
+        std::array<std::array<std::array<std::array<std::vector<std::vector<BlockColor>>, 16>, 16>, 16>, 16>& dst,
+        int                                                                                                   scale
+    );
+    void downsample(
+        const std::array<std::array<std::array<std::array<std::vector<std::vector<BlockColor>>, 16>, 16>, 16>, 16>& src,
+        ShadowRenderData&                                                                                           dst,
+        int scale
+    );
 
     struct BakeTask {
         std::weak_ptr<RegionCacheData> data;

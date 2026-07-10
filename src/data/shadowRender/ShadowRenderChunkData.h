@@ -25,9 +25,7 @@ public:
     }
 
 public:
-    [[nodiscard]] const ShadowRenderBlockData& getBlockData(const ChunkWorldPos& pos) {
-        return blocksData[pos.z][pos.x];
-    }
+    [[nodiscard]] ShadowRenderBlockData& getBlockData(const ChunkWorldPos& pos) { return blocksData[pos.z][pos.x]; }
 
     [[nodiscard]] const BlockDataBase& getBlockBaseData(const ChunkWorldPos& pos) const override {
         return blocksData[pos.z][pos.x];

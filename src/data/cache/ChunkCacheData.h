@@ -18,6 +18,7 @@ public:
 
     bool                                           loadChunkBaseData = false;
     bool                                           loadBakedColors   = false;
+    bool                                           loadShadowData    = false;
     std::array<std::array<BlockCacheData, 16>, 16> blocksData; // need to save
 
     mutable std::shared_mutex mutex_; // protects all fields above
@@ -28,7 +29,7 @@ public:
     [[nodiscard]] std::int16_t getHeight(const ChunkWorldPos& pos);
 
     [[nodiscard]] const BlockCacheData& getBlockCacheData(const ChunkWorldPos& pos) const;
-    [[nodiscard]] BlockCacheData        getBlockCacheData(const ChunkWorldPos& pos);
+    [[nodiscard]] BlockCacheData&       getBlockCacheData(const ChunkWorldPos& pos);
 
     [[nodiscard]] const BlockDataBase& getBlockBaseData(const ChunkWorldPos& pos) const override;
 };

@@ -13,7 +13,6 @@
 
 #include <array>
 #include <memory>
-#include <optional>
 #include <unordered_map>
 
 
@@ -49,13 +48,13 @@ public:
     //     return it->second;
     // }
 
-    [[nodiscard]] std::optional<BlockDataBase> getBlockBaseData(const WorldPos& offsetPos) {
+    [[nodiscard]] const BlockDataBase* getBlockBaseData(const WorldPos& offsetPos) {
         if (offsetPos.x >= 0 && offsetPos.x < 256 && offsetPos.z >= 0 && offsetPos.z < 256)
-            return getLocalShadowChunkData(RegionChunkPos{offsetPos})->getBlockBaseData(ChunkWorldPos{offsetPos});
+            return &getLocalShadowChunkData(RegionChunkPos{offsetPos})->getBlockBaseData(ChunkWorldPos{offsetPos});
         // auto offsetRegionPos = RegionPos{offsetPos};
         auto it = helperChunksData.find(ChunkPosWithDim{offsetPos});
-        if (it == helperChunksData.end()) return std::nullopt;
-        return it->second->getBlockCacheData(ChunkWorldPos{offsetPos});
+        if (it == helperChunksData.end()) return nullptr;
+        return &it->second->getBlockBaseData(ChunkWorldPos{offsetPos});
     }
 
     [[nodiscard]] std::shared_ptr<const ChunkDataBase> getChunk(const WorldPos& offsetPos) {
@@ -67,6 +66,11 @@ public:
             return getLocalShadowChunkData(RegionChunkPos{offsetPos});
         auto it = helperChunksData.find(offsetPos);
         if (it == helperChunksData.end()) return nullptr;
+        return it->second;
+    }
+    [[nodiscard]] std::shared_ptr<const ChunkDataBase> getHelperChunkWithShadowData(const ChunkPosWithDim& offsetPos) {
+        auto it = helperChunksData.find(offsetPos);
+        if (it == helperChunksData.end() || !it->second->loadShadowData) return nullptr;
         return it->second;
     }
 

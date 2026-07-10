@@ -19,7 +19,7 @@ void ChunkCacheData::setColor(const ChunkWorldPos& pos, const BlockColor& color)
     return blocksData[pos.z][pos.x];
 }
 
-[[nodiscard]] BlockCacheData ChunkCacheData::getBlockCacheData(const ChunkWorldPos& pos) {
+[[nodiscard]] BlockCacheData& ChunkCacheData::getBlockCacheData(const ChunkWorldPos& pos) {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return blocksData[pos.z][pos.x];
 }

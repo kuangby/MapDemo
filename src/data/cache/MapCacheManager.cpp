@@ -64,13 +64,13 @@ std::shared_ptr<RegionCacheData> MapCacheManager::getOrCreateRegion(const Region
 //     if (data) data->markBakedDirty();
 // }
 
-void MapCacheManager::evictRegion(const RegionPos& pos) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto                        it = regions_.find(pos);
-    if (it == regions_.end()) return;
-    saveToDisk(pos, it->second);
-    regions_.erase(it);
-}
+// void MapCacheManager::evictRegion(const RegionPos& pos) {
+//     std::lock_guard<std::mutex> lock(mutex_);
+//     auto                        it = regions_.find(pos);
+//     if (it == regions_.end()) return;
+//     saveToDisk(pos, it->second);
+//     regions_.erase(it);
+// }
 
 // void MapCacheManager::evictChunk(int chunkX, int chunkZ, int dim) {
 //     auto pos = worldToRegion(chunkX * 16, chunkZ * 16, dim);

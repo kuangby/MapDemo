@@ -203,10 +203,9 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
     auto regionData = MapCacheManager::getInstance().getOrCreateRegion(RegionPos(key));
     auto chunkData  = regionData->getOrCreateChunkData(RegionChunkPos(key));
 
-    int minY = region->mMaxHeight;
+    int minY = region->mMinHeight;
 
-    bool dataChanged   = false;
-    bool heightChanged = false;
+    bool changed = false;
     {
         std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
         for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
@@ -215,7 +214,7 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
 
                 int idx = chunkWorldPosZ * 16 + chunkWorldPosX;
 
-                auto& currentBlockData = chunkData->blocksData[chunkWorldPosX][chunkWorldPosZ];
+                auto& currentBlockData = chunkData->blocksData[chunkWorldPosZ][chunkWorldPosX];
 
                 if (!chunkData->loadChunkBaseData) {
 
@@ -225,30 +224,26 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
                     currentBlockData.solidHeight =
                         static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
 
-                    dataChanged   = true;
-                    heightChanged = true;
+                    changed = true;
                 } else {
                     if (currentBlockData.color != color) {
                         currentBlockData.color = color;
-                        dataChanged            = true;
+                        changed                = true;
                     }
                     if (currentBlockData.height != chunk->mHeightmap.get()[idx].mVal + minY) {
                         currentBlockData.height = static_cast<std::int16_t>(chunk->mHeightmap.get()[idx].mVal + minY);
-                        heightChanged           = true;
+                        changed                 = true;
                     }
                     if (currentBlockData.solidHeight != chunk->mRenderHeightmap.get()[idx].mVal + minY) {
                         currentBlockData.solidHeight =
                             static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
-                        heightChanged = true;
+                        changed = true;
                     }
                 }
             }
         }
         chunkData->lastScanFrame = totalFrames_;
-        if (dataChanged) {
-            regionData->markDirty();
-            regionData->markBakedDirty();
-        } else if (heightChanged) regionData->markBakedDirty();
+        if (changed) regionData->markBakedDirty();
     }
 
     auto       us         = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();

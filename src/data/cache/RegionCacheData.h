@@ -12,7 +12,6 @@ class RegionCacheData {
 private:
     std::array<std::array<std::shared_ptr<ChunkCacheData>, 16>, 16> chunksData;
     mutable std::shared_mutex                                       mutex_; // protects all fields above
-    bool                                                            dirty{true};
     bool                                                            bakedDirty{true};
 
 public:
@@ -40,24 +39,9 @@ public:
         bakedDirty = true;
     }
 
-    void markDirty() {
-        std::unique_lock<std::shared_mutex> lock(mutex_);
-        dirty = true;
-    }
-
     void resetBakedDirty() {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         bakedDirty = false;
-    }
-
-    void resetDirty() {
-        std::unique_lock<std::shared_mutex> lock(mutex_);
-        dirty = false;
-    }
-
-    [[nodiscard]] bool isDirty() const {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        return dirty;
     }
 
     [[nodiscard]] bool isBakedDirty() const {

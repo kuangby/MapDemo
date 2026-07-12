@@ -70,10 +70,15 @@ LL_TYPE_INSTANCE_HOOK(
             auto pChunk = ChunkPos(pos.x, pos.z);
             int  dim    = static_cast<int>(player->getDimensionId());
             TerrainScanner::getInstance().update(this->getRegion(), ChunkPosWithDim{pChunk.x, pChunk.z, dim});
-            MapCacheManager::getInstance().evictRegionsOutsideRadius(
-                ChunkPosWithDim{pChunk.x, pChunk.z, dim},
-                cfg.terrain.scanRadius
-            );
+
+            static int removeTimer  = 1;
+            removeTimer            %= 1200;
+            if (!removeTimer++) {
+                MapCacheManager::getInstance().evictRegionsOutsideRadius(
+                    ChunkPosWithDim{pChunk.x, pChunk.z, dim},
+                    cfg.terrain.scanRadius
+                );
+            }
         }
     } else {
         if (s_wasInWorld) {

@@ -189,36 +189,6 @@ void MiniMapRenderer::render() {
         int minWorldZ = static_cast<int>(std::floor(smoothZ - renderRadiusBlocks));
         int maxWorldZ = static_cast<int>(std::floor(smoothZ + renderRadiusBlocks));
 
-        // for (int worldZ = minWorldZ; worldZ <= maxWorldZ; ++worldZ) {
-        //     for (int worldX = minWorldX; worldX <= maxWorldX; ++worldX) {
-        //         auto pos = RegionPos(WorldPos{worldX, worldZ, dim});
-        //         auto data = MapCacheManager::getInstance().getRegion(pos);
-        //         if (!data) continue;
-
-        //         int localX = worldX - (pos.x * RegionData::SIZE);
-        //         int localZ = worldZ - (pos.z * RegionData::SIZE);
-        //         if (localX < 0) localX += RegionData::SIZE;
-        //         if (localZ < 0) localZ += RegionData::SIZE;
-
-        //         auto color = data->getPixel(localX, localZ);
-        //         if (color.a == 0) continue;
-
-        //         requestBake(pos, data);
-        //         color = data->getBakedPixel(localX, localZ);
-
-        //         drawTerrainPixel(
-        //             drawList,
-        //             static_cast<float>(worldX),
-        //             static_cast<float>(worldZ),
-        //             color,
-        //             ImVec2(smoothX, smoothZ),
-        //             radius - 1.0f,
-        //             cx,
-        //             cy,
-        //             scale
-        //         );
-        //     }
-        // }
         auto minWorldPos = WorldPos{minWorldX, minWorldZ, dimId};
         auto maxWorldPos = WorldPos{maxWorldX, maxWorldZ, dimId};
 

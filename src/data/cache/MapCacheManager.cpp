@@ -26,6 +26,12 @@ std::shared_ptr<RegionCacheData> MapCacheManager::getRegion(const RegionPos& pos
     return it->second;
 }
 
+std::shared_ptr<ChunkCacheData> MapCacheManager::getChunk(const ChunkPosWithDim& pos) {
+    auto region = getRegion(RegionPos(pos));
+    if (!region) return nullptr;
+    return region->getChunkData(RegionChunkPos(pos));
+}
+
 std::shared_ptr<RegionCacheData> MapCacheManager::getOrCreateRegion(const RegionPos& pos) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto [newIt, inserted] = regions_.try_emplace(pos);
@@ -37,26 +43,26 @@ std::shared_ptr<RegionCacheData> MapCacheManager::getOrCreateRegion(const Region
     return newIt->second;
 }
 
-std::shared_ptr<ChunkCacheData> MapCacheManager::getOrCreateChunk(const ChunkPosWithDim& pos) {
-    auto region = getOrCreateRegion(RegionPos(pos));
-    return region->getOrCreateChunkData(RegionChunkPos(pos));
-}
+// std::shared_ptr<ChunkCacheData> MapCacheManager::getOrCreateChunk(const ChunkPosWithDim& pos) {
+//     auto region = getOrCreateRegion(RegionPos(pos));
+//     return region->getOrCreateChunkData(RegionChunkPos(pos));
+// }
 
-void MapCacheManager::updateBlock(const WorldPos& pos, const BlockColor& color) {
-    auto regionPos  = RegionPos(pos);
-    auto regionData = getOrCreateRegion(regionPos);
+// void MapCacheManager::updateBlock(const WorldPos& pos, const BlockColor& color) {
+//     auto regionPos  = RegionPos(pos);
+//     auto regionData = getOrCreateRegion(regionPos);
 
-    auto chunk = regionData->getChunkData(RegionChunkPos(pos));
-    if (chunk) {
-        chunk->setColor(ChunkWorldPos(pos), color);
-        regionData->markDirty();
-    }
-}
+//     auto chunk = regionData->getChunkData(RegionChunkPos(pos));
+//     if (chunk) {
+//         chunk->setColor(ChunkWorldPos(pos), color);
+//         regionData->markBakedDirty();
+//     }
+// }
 
-void MapCacheManager::markDirty(const RegionPos& pos) {
-    auto data = getRegion(pos);
-    if (data) data->markDirty();
-}
+// void MapCacheManager::markDirty(const RegionPos& pos) {
+//     auto data = getRegion(pos);
+//     if (data) data->markBakedDirty();
+// }
 
 void MapCacheManager::evictRegion(const RegionPos& pos) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -87,6 +93,32 @@ void MapCacheManager::evictRegion(const RegionPos& pos) {
 //         regions_.erase(it);
 //     }
 // }
+
+void MapCacheManager::evictRegionsOutsideRadius(ChunkPosWithDim centerChunkPos, int radiusChunks) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const int threshold  = 2 * radiusChunks + 8;
+    const int threshold2 = threshold * threshold;
+
+    for (auto it = regions_.begin(); it != regions_.end();) {
+        const auto& regionPos = it->first;
+        if (regionPos.dimId != centerChunkPos.dimId) {
+            ++it;
+            continue;
+        }
+
+        int regionCenterChunkX = regionPos.x * 16 + 8;
+        int regionCenterChunkZ = regionPos.z * 16 + 8;
+        int dx                 = regionCenterChunkX - centerChunkPos.x;
+        int dz                 = regionCenterChunkZ - centerChunkPos.z;
+
+        if (dx * dx + dz * dz > threshold2) {
+            saveToDisk(regionPos, it->second);
+            it = regions_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
 
 bool MapCacheManager::initializeDiskCache(const std::filesystem::path& path) {
     try {

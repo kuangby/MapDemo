@@ -30,6 +30,8 @@ public:
         z           = chunkPos.z;
         this->dimId = dimId;
     }
+
+    [[nodiscard]] explicit ChunkPosWithDim(const RegionPos& regionPos, const ChunkPosWithDim& offset) noexcept;
 };
 } // namespace map_demo
 

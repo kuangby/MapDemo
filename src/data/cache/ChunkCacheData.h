@@ -19,11 +19,18 @@ public:
     bool loadChunkBaseData = false;
     bool loadBakedColors   = false;
 
-    int shadowScale = -1;
-
     std::array<std::array<BlockCacheData, 16>, 16> blocksData; // need to save
 
     mutable std::shared_mutex mutex_; // protects all fields above
+
+public:
+    ChunkCacheData() = default;
+
+    [[nodiscard]] ChunkCacheData(const ChunkCacheData& other)
+    : ChunkDataBase(other),
+      loadChunkBaseData(other.loadChunkBaseData),
+      loadBakedColors(other.loadBakedColors),
+      blocksData(other.blocksData) {}
 
 public:
     void setColor(const ChunkWorldPos& pos, const BlockColor& color);

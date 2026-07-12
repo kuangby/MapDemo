@@ -12,7 +12,6 @@
 #include <queue>
 #include <thread>
 #include <unordered_set>
-#include <vector>
 
 namespace map_demo {
 
@@ -52,18 +51,6 @@ private:
     void applyWaterOverlay(ShadowRenderData& shadow);
     void applyShadowMap(ShadowRenderData& shadow, int scale);
     void applyBevel(ShadowRenderData& shadow, int scale);
-
-    // 上采样辅助
-    void upscale(
-        const ShadowRenderData&                                                                               src,
-        std::array<std::array<std::array<std::array<std::vector<std::vector<BlockColor>>, 16>, 16>, 16>, 16>& dst,
-        int                                                                                                   scale
-    );
-    void downsample(
-        const std::array<std::array<std::array<std::array<std::vector<std::vector<BlockColor>>, 16>, 16>, 16>, 16>& src,
-        ShadowRenderData&                                                                                           dst,
-        int scale
-    );
 
     struct BakeTask {
         std::weak_ptr<RegionCacheData> data;

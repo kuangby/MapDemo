@@ -23,23 +23,24 @@ public:
 
     std::shared_ptr<RegionCacheData> getRegion(const RegionPos& pos);
 
+    std::shared_ptr<ChunkCacheData> getChunk(const ChunkPosWithDim& pos);
+
     // Get or create a region
-    // std::shared_ptr<RegionData> getOrCreateRegion(int regionX, int regionZ, int dim);
     std::shared_ptr<RegionCacheData> getOrCreateRegion(const RegionPos& pos);
 
-    std::shared_ptr<ChunkCacheData> getOrCreateChunk(const ChunkPosWithDim& pos);
+    // std::shared_ptr<ChunkCacheData> getOrCreateChunk(const ChunkPosWithDim& pos);
 
     // Update a single block color in cache
-    void updateBlock(const WorldPos& pos, const BlockColor& color);
+    // void updateBlock(const WorldPos& pos, const BlockColor& color);
 
     // Mark a region dirty
-    void markDirty(const RegionPos& pos);
+    // void markDirty(const RegionPos& pos);
 
     // Evict a single chunk from cache. Removes the whole region if it becomes empty.
     // void evictChunk(int chunkX, int chunkZ, int dim);
 
     // Evict an entire region (kept for compatibility)
-    void evictRegion(const RegionPos& pos);
+    // void evictRegion(const RegionPos& pos);
 
     // 初始化磁盘缓存，path 为 KeyValueDB 目录
     bool initializeDiskCache(const std::filesystem::path& path);
@@ -51,7 +52,7 @@ public:
     std::string        serializeRegionData(std::shared_ptr<RegionCacheData> data) { return ""; };
     bool deserializeRegionData(std::shared_ptr<RegionCacheData> data, const std::string& blob) { return false; };
 
-    void evictRegionsOutsideRadius(ChunkPosWithDim centerChunkPos, int radiusChunks) {};
+    void evictRegionsOutsideRadius(ChunkPosWithDim centerChunkPos, int radiusChunks);
 
 private:
     MapCacheManager() = default;

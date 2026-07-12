@@ -19,20 +19,22 @@ public:
         int regionZ = worldPos.z < 0 ? ((worldPos.z + 1) / 256) - 1 : worldPos.z / 256;
         int chunkX  = worldPos.x < 0 ? ((worldPos.x + 1) / 16) - 1 : worldPos.x / 16;
         int chunkZ  = worldPos.z < 0 ? ((worldPos.z + 1) / 16) - 1 : worldPos.z / 16;
-        x           = regionX * 16 - chunkX;
-        z           = regionZ * 16 - chunkZ;
+        x           = chunkX - regionX * 16;
+        z           = chunkZ - regionZ * 16;
     }
 
     [[nodiscard]] explicit RegionChunkPos(ChunkPosWithDim chunkPos) noexcept {
         int regionX = chunkPos.x < 0 ? ((chunkPos.x + 1) / 16) - 1 : chunkPos.x / 16;
         int regionZ = chunkPos.z < 0 ? ((chunkPos.z + 1) / 16) - 1 : chunkPos.z / 16;
-        x           = regionX * 16 - chunkPos.x;
-        z           = regionZ * 16 - chunkPos.z;
+        x           = chunkPos.x - regionX * 16;
+        z           = chunkPos.z - regionZ * 16;
     }
 
     [[nodiscard]] explicit RegionChunkPos(ChunkPos chunkPos) noexcept {
-        x = chunkPos.x < 0 ? ((chunkPos.x + 1) / 16) - 1 : chunkPos.x / 16;
-        z = chunkPos.z < 0 ? ((chunkPos.z + 1) / 16) - 1 : chunkPos.z / 16;
+        int regionX = chunkPos.x < 0 ? ((chunkPos.x + 1) / 16) - 1 : chunkPos.x / 16;
+        int regionZ = chunkPos.z < 0 ? ((chunkPos.z + 1) / 16) - 1 : chunkPos.z / 16;
+        x           = chunkPos.x - regionX * 16;
+        z           = chunkPos.z - regionZ * 16;
     }
 };
 

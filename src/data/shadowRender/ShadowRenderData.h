@@ -68,9 +68,12 @@ public:
         if (it == helperChunksData.end()) return nullptr;
         return it->second;
     }
-    [[nodiscard]] std::shared_ptr<const ChunkDataBase> getHelperChunkWithShadowData(const ChunkPosWithDim& offsetPos) {
+    [[nodiscard]] std::shared_ptr<const ChunkDataBase>
+    getChunkWithEffectiveShadowData(const ChunkPosWithDim& offsetPos, int scale) {
+        if (offsetPos.x >= 0 && offsetPos.x < 16 && offsetPos.z >= 0 && offsetPos.z < 16)
+            return getLocalShadowChunkData(RegionChunkPos{offsetPos});
         auto it = helperChunksData.find(offsetPos);
-        if (it == helperChunksData.end() || !it->second->loadShadowData) return nullptr;
+        if (it == helperChunksData.end() || it->second->shadowScale != scale) return nullptr;
         return it->second;
     }
 

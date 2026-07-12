@@ -16,9 +16,11 @@ class ChunkCacheData : public ChunkDataBase {
 public:
     std::uint64_t lastScanFrame = 0;
 
-    bool                                           loadChunkBaseData = false;
-    bool                                           loadBakedColors   = false;
-    bool                                           loadShadowData    = false;
+    bool loadChunkBaseData = false;
+    bool loadBakedColors   = false;
+
+    int shadowScale = -1;
+
     std::array<std::array<BlockCacheData, 16>, 16> blocksData; // need to save
 
     mutable std::shared_mutex mutex_; // protects all fields above

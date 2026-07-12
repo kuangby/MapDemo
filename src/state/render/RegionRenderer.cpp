@@ -37,21 +37,21 @@ inline BlockColor multiplyColor(BlockColor c, float factor) {
     };
 }
 
-inline BlockColor blendColors(BlockColor base, BlockColor overlay, float overlayFactor) {
-    float baseFactor = 1.0f - overlayFactor;
-    return BlockColor{
-        static_cast<std::uint8_t>(clamp255(
-            static_cast<int>(static_cast<float>(base.r) * baseFactor + static_cast<float>(overlay.r) * overlayFactor)
-        )),
-        static_cast<std::uint8_t>(clamp255(
-            static_cast<int>(static_cast<float>(base.g) * baseFactor + static_cast<float>(overlay.g) * overlayFactor)
-        )),
-        static_cast<std::uint8_t>(clamp255(
-            static_cast<int>(static_cast<float>(base.b) * baseFactor + static_cast<float>(overlay.b) * overlayFactor)
-        )),
-        base.a
-    };
-}
+// inline BlockColor blendColors(BlockColor base, BlockColor overlay, float overlayFactor) {
+//     float baseFactor = 1.0f - overlayFactor;
+//     return BlockColor{
+//         static_cast<std::uint8_t>(clamp255(
+//             static_cast<int>(static_cast<float>(base.r) * baseFactor + static_cast<float>(overlay.r) * overlayFactor)
+//         )),
+//         static_cast<std::uint8_t>(clamp255(
+//             static_cast<int>(static_cast<float>(base.g) * baseFactor + static_cast<float>(overlay.g) * overlayFactor)
+//         )),
+//         static_cast<std::uint8_t>(clamp255(
+//             static_cast<int>(static_cast<float>(base.b) * baseFactor + static_cast<float>(overlay.b) * overlayFactor)
+//         )),
+//         base.a
+//     };
+// }
 
 } // namespace
 
@@ -180,7 +180,7 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             if (!chunkData) return;
             std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
-            shadow.handlingRegion[regionChunkZ][regionChunkX] = std::make_shared<ShadowRenderChunkData>(chunkData);
+            shadow.handlingRegion[regionChunkZ][regionChunkX] = std::make_shared<ShadowRenderChunkData>(*chunkData);
         }
     }
 
@@ -205,6 +205,7 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
                         shadowChunkData->blocksData[chunkWorldZ][chunkWorldX].color;
                 }
             }
+            chunkData->shadowScale = shadowChunkData->shadowScale;
         }
     }
 }
@@ -345,7 +346,7 @@ void RegionRenderer::applyStyle1(ShadowRenderData& shadow) {
     }
 }
 
-void RegionRenderer::applyWaterOverlay(ShadowRenderData& shadow) {
+void RegionRenderer::applyWaterOverlay(ShadowRenderData& /*shadow*/) {
     // for (int z = 0; z < ShadowRegion::SIZE; ++z) {
     //     for (int x = 0; x < ShadowRegion::SIZE; ++x) {
     //         const auto& info = shadow.getInfo(x, z);
@@ -443,8 +444,12 @@ void RegionRenderer::downsample(
                             a                   += subBlockColor.a;
                         }
                     }
-                    dstChunk->blocksData[chunkZ][chunkX].color =
-                        BlockColor(r / samples, g / samples, b / samples, a / samples);
+                    dstChunk->blocksData[chunkZ][chunkX].color = BlockColor(
+                        static_cast<uint8_t>(r / samples),
+                        static_cast<uint8_t>(g / samples),
+                        static_cast<uint8_t>(b / samples),
+                        static_cast<uint8_t>(a / samples)
+                    );
                 }
             }
         }
@@ -471,7 +476,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
     const float sdz       = sunZ / sun2dLen;
     const float dzPerStep = (sunY / sun2dLen) / static_cast<float>(scale);
 
-    const int HR = 256 * scale;
+    int dimId = shadow.handlingRegionPos.dimId;
 
     // auto coarseH = [&](int hi, int hj, const ShadowRenderData& s) -> float {
     //     int bi = std::clamp(hi / scale, 0, 255);
@@ -505,41 +510,57 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
     if (sunX <= 0) {
         if (sunZ <= 0) {
             for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
-                auto westChunk      = shadow.getChunk(ChunkPosWithDim{-1, chunkZ});
-                auto northWestChunk = shadow.getChunk(ChunkPosWithDim{-1, chunkZ - 1});
+                auto westChunk = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ, dimId}, scale);
+                auto northWestChunk =
+                    shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ - 1, dimId}, scale);
                 for (int chunkX = 0; chunkX < 16; chunkX++) {
-                    auto chunk      = shadow.handlingRegion[chunkZ][chunkX];
-                    auto northChunk = shadow.getChunk(ChunkPosWithDim(chunkX, chunkZ - 1));
+                    auto chunk = shadow.handlingRegion[chunkZ][chunkX];
+                    if (!chunk) {
+                        westChunk = chunk;
+                        northWestChunk =
+                            shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX, chunkZ - 1}, scale);
+                        continue;
+                    }
+                    auto northChunk =
+                        shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX, chunkZ - 1}, scale);
                     for (int blockZ = 0; blockZ < 16; blockZ++) {
-                        auto                 westBlock = &westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ});
-                        const BlockDataBase* northWestBlock;
-                        if (!blockZ) northWestBlock = &northWestChunk->getBlockBaseData(ChunkWorldPos{15, 15});
-                        else northWestBlock = &westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ - 1});
+                        const BlockDataBase* westBlock = nullptr;
+                        if (westChunk) westBlock = &westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ});
+                        const BlockDataBase* northWestBlock = nullptr;
+                        if (!blockZ) {
+                            if (northWestChunk)
+                                northWestBlock = &northWestChunk->getBlockBaseData(ChunkWorldPos{15, 15});
+                        } else if (westChunk)
+                            northWestBlock = &westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ - 1});
                         for (int blockX = 0; blockX < 16; blockX++) {
                             auto& shadowOriginData = chunk->blocksData[blockZ][blockX].shadowOriginData;
-                            shadowOriginData.reserve(scale);
-                            auto& handlingBlockData =
-                                shadow.handlingRegion[chunkZ][chunkX]->getBlockData(ChunkWorldPos(blockX, blockZ));
-                            const BlockDataBase* northBlock;
-                            if (!blockZ) northBlock = &northChunk->getBlockBaseData(ChunkWorldPos{blockX, 15});
-                            else northBlock = &chunk->getBlockBaseData(ChunkWorldPos{blockX, blockZ - 1});
-                            bool canSkip = handlingBlockData.height >= westBlock->height
-                                        && handlingBlockData.height >= northBlock->height
-                                        && handlingBlockData.height >= northWestBlock->height;
-
+                            shadowOriginData.resize(scale);
+                            auto&                handlingBlockData = chunk->getBlockData(ChunkWorldPos(blockX, blockZ));
+                            const BlockDataBase* northBlock        = nullptr;
+                            if (!blockZ) {
+                                if (northChunk) northBlock = &northChunk->getBlockBaseData(ChunkWorldPos{blockX, 15});
+                            } else northBlock = &chunk->getBlockBaseData(ChunkWorldPos{blockX, blockZ - 1});
+                            bool canSkip = (!westBlock || handlingBlockData.height >= westBlock->height)
+                                        && (!northBlock || handlingBlockData.height >= northBlock->height)
+                                        && (!northWestBlock || handlingBlockData.height >= northWestBlock->height);
                             int h = handlingBlockData.height;
                             for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
-                                auto  westShadowData = westBlock->shadowOriginData[scaleZ][scale - 1];
-                                float northWestShadowData;
-                                if (!scaleZ)
-                                    northWestShadowData = northWestBlock->shadowOriginData[scale - 1][scale - 1];
-                                else northWestShadowData = westBlock->shadowOriginData[scaleZ - 1][scale - 1];
-                                shadowOriginData[scaleZ].reserve(scale);
-                                for (int scaleX = 0; scaleX < 16; scaleX++) {
+                                float westShadowData = 0.0f;
+                                if (westBlock) westShadowData = westBlock->shadowOriginData[scaleZ][scale - 1];
+                                float northWestShadowData = 0.0f;
+                                if (!scaleZ) {
+                                    if (northWestBlock)
+                                        northWestShadowData = northWestBlock->shadowOriginData[scale - 1][scale - 1];
+                                } else if (westBlock)
+                                    northWestShadowData = westBlock->shadowOriginData[scaleZ - 1][scale - 1];
+                                shadowOriginData[scaleZ].resize(scale, 0.0f);
+                                for (int scaleX = 0; scaleX < scale; scaleX++) {
                                     // auto currentShadowData = handlingBlockData.shadowOriginData[scaleZ][scaleX];
-                                    float northShadowData;
-                                    if (!scaleZ) northShadowData = northBlock->shadowOriginData[scale - 1][scaleX];
-                                    else northShadowData = handlingBlockData.shadowOriginData[scaleZ - 1][scaleX];
+                                    float northShadowData = 0.0f;
+                                    if (!scaleZ) {
+                                        if (northBlock)
+                                            northShadowData = northBlock->shadowOriginData[scale - 1][scaleX];
+                                    } else northShadowData = handlingBlockData.shadowOriginData[scaleZ - 1][scaleX];
                                     if (canSkip && westShadowData < 0.0001f && northShadowData < 0.0001f
                                         && northWestShadowData < 0.0001f) {
                                         handlingBlockData.shadowOriginData[scaleZ][scaleX] = 0.0f;
@@ -550,8 +571,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
                                                   + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
                                     float offsetZ = static_cast<float>(chunkZ * 16 + blockZ)
                                                   + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
-                                    auto lastOffsetPos =
-                                        WorldPos{0x7fffffff, 0x7fffffff, shadow.handlingRegionPos.dimId};
+                                    auto lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
                                     for (int s = 1; s <= kMaxSteps * scale; ++s) {
                                         int sx = static_cast<int>(offsetX + static_cast<float>(s) * sdx);
                                         int sz = static_cast<int>(offsetZ + static_cast<float>(s) * sdz);
@@ -578,8 +598,9 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
                             northWestBlock = northBlock;
                         }
                     }
-                    westChunk      = chunk;
-                    northWestChunk = northChunk;
+                    chunk->shadowScale = scale;
+                    westChunk          = chunk;
+                    northWestChunk     = northChunk;
                 }
             }
         }
@@ -587,21 +608,22 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
         for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
             for (int chunkX = 0; chunkX < 16; chunkX++) {
                 auto chunk = shadow.handlingRegion[chunkZ][chunkX];
+                if (!chunk) continue;
                 for (int blockZ = 0; blockZ < 16; blockZ++) {
                     for (int blockX = 0; blockX < 16; blockX++) {
                         auto& shadowOriginData = chunk->blocksData[blockZ][blockX].shadowOriginData;
-                        shadowOriginData.reserve(scale);
+                        shadowOriginData.resize(scale);
                         auto& handlingBlockData =
                             shadow.handlingRegion[chunkZ][chunkX]->getBlockData(ChunkWorldPos(blockX, blockZ));
                         int h = handlingBlockData.height;
                         for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
-                            shadowOriginData[scaleZ].reserve(scale);
-                            for (int scaleX = 0; scaleX < 16; scaleX++) {
+                            shadowOriginData[scaleZ].resize(scale, 0.0f);
+                            for (int scaleX = 0; scaleX < scale; scaleX++) {
                                 float offsetX = static_cast<float>(chunkX * 16 + blockX)
                                               + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
                                 float offsetZ = static_cast<float>(chunkZ * 16 + blockZ)
                                               + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
-                                auto lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, shadow.handlingRegionPos.dimId};
+                                auto lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
                                 for (int s = 1; s <= kMaxSteps * scale; ++s) {
                                     int sx = static_cast<int>(offsetX + static_cast<float>(s) * sdx);
                                     int sz = static_cast<int>(offsetZ + static_cast<float>(s) * sdz);
@@ -625,7 +647,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
         }
     }
 
-    std::array<std::array<std::array<std::array<std::vector<std::vector<BlockColor>>, 16>, 16>, 16>, 16> hrImage;
+    // std::array<std::array<std::array<std::array<std::vector<std::vector<BlockColor>>, 16>, 16>, 16>, 16> hrImage;
     // std::vector<BlockColor> hrImage;
     // upscale(shadow, hrImage, scale);
 
@@ -666,11 +688,12 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
     // };
 
     if (pcfRadius) {
-        std::array<std::vector<std::vector<float>>, 16> northShadowData;
-        std::array<std::vector<std::vector<float>>, 16> southShadowData;
-        auto westChunk                                 = shadow.getHelperChunkWithShadowData(ChunkPosWithDim{-1, -1});
-        auto handlingChunk                             = shadow.getHelperChunkWithShadowData(ChunkPosWithDim{0, -1});
-        std::shared_ptr<const ChunkDataBase> eastChunk = nullptr;
+        std::array<std::vector<std::vector<float>>, 16>                 northShadowData;
+        std::array<std::vector<std::vector<float>>, 16>                 southShadowData;
+        std::array<std::array<std::vector<std::vector<float>>, 16>, 16> shadowTempData;
+        std::shared_ptr<const ChunkDataBase>                            westChunk     = nullptr;
+        std::shared_ptr<const ChunkDataBase>                            handlingChunk = nullptr;
+        std::shared_ptr<const ChunkDataBase>                            eastChunk     = nullptr;
 
         auto getShadowData = [&westChunk, &handlingChunk, &eastChunk, &scale](int sx, int sz) -> std::optional<float> {
             if (sx < 0) {
@@ -683,121 +706,340 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
                     .shadowOriginData[sz % scale][sx % scale];
             } else {
                 if (!eastChunk) return std::nullopt;
-                return eastChunk->getBlockBaseData(ChunkWorldPos{sx / scale, sz / scale})
+                return eastChunk->getBlockBaseData(ChunkWorldPos{sx / scale - 16, sz / scale})
                     .shadowOriginData[sz % scale][sx % scale];
             }
         };
 
-        if (!westChunk && !handlingChunk && !eastChunk) {
+        for (int chunkZ = -1; chunkZ <= 16; chunkZ++) {
+            westChunk     = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ, dimId}, scale);
+            handlingChunk = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{0, chunkZ, dimId}, scale);
             for (int chunkX = 0; chunkX < 16; chunkX++) {
-                auto& handlingChunkShadowData = northShadowData[chunkX];
-                handlingChunkShadowData.reserve(pcfRadius);
-                for (int i = 0; i < pcfRadius; i++) handlingChunkShadowData[i].reserve(16 * scale);
-                for (int sZ = 16 * scale - pcfRadius; sZ < 16 * scale; sZ++) {
-                    for (int sX = 0; sX < 16 * scale; sX++) {
-                        handlingChunkShadowData[sZ - 16 * scale + pcfRadius][sX] = 0.0f;
-                    }
-                }
-            }
-        } else {
-            for (int chunkX = 0; chunkX < 16; chunkX++) {
-                eastChunk                     = shadow.getHelperChunkWithShadowData(ChunkPosWithDim{chunkX + 1, -1});
-                auto& handlingChunkShadowData = northShadowData[chunkX];
-                handlingChunkShadowData.reserve(pcfRadius);
-                for (int i = 0; i < pcfRadius; i++) handlingChunkShadowData[i].reserve(16 * scale);
-                for (int sZ = 16 * scale - pcfRadius; sZ < 16 * scale; sZ++) {
-                    for (int sX = 0; sX < 16 * scale; sX++) {
-                        float sum   = 0.0f;
-                        int   count = 0;
-                        for (int index = sX - pcfRadius; index <= sX + pcfRadius; index++) {
-                            auto shadowData = getShadowData(index, sZ);
-                            if (shadowData) {
-                                sum += shadowData.value();
-                                count++;
-                            }
+                eastChunk = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX + 1, chunkZ, dimId}, scale);
+                std::vector<std::vector<float>>* handlingChunkShadowData = nullptr;
+                if (chunkZ == -1) handlingChunkShadowData = &northShadowData[chunkX];
+                else if (chunkZ == 16) handlingChunkShadowData = &southShadowData[chunkX];
+                else handlingChunkShadowData = &shadowTempData[chunkZ][chunkX];
+                int zSize;
+                if (chunkZ == -1 || chunkZ == 16) zSize = pcfRadius;
+                else zSize = 16 * scale;
+                handlingChunkShadowData->resize(zSize);
+                if (!westChunk && !handlingChunk && !eastChunk) {
+                    for (int sZ = 0; sZ < zSize; sZ++) {
+                        (*handlingChunkShadowData)[sZ].resize(16 * scale, 0.0f);
+                        for (int sX = 0; sX < 16 * scale; sX++) {
+                            (*handlingChunkShadowData)[sZ][sX] = 0.0f;
                         }
-                        handlingChunkShadowData[sZ - 16 * scale + pcfRadius][sX] = sum / static_cast<float>(count);
+                    }
+                } else {
+                    for (int sZ = 0; sZ < zSize; sZ++) {
+                        (*handlingChunkShadowData)[sZ].resize(16 * scale, 0.0f);
+                        for (int sX = 0; sX < 16 * scale; sX++) {
+                            float sum   = 0.0f;
+                            int   count = 0;
+                            for (int index = sX - pcfRadius; index <= sX + pcfRadius; index++) {
+                                std::optional<float> shadowData{};
+                                if (chunkZ == -1) shadowData = getShadowData(index, 16 * scale - pcfRadius + sZ);
+                                else shadowData = getShadowData(index, sZ);
+                                if (shadowData) {
+                                    sum += shadowData.value();
+                                    count++;
+                                }
+                            }
+                            if (count) (*handlingChunkShadowData)[sZ][sX] = sum / static_cast<float>(count);
+                            else (*handlingChunkShadowData)[sZ][sX] = 0.0f;
+                        }
                     }
                 }
                 westChunk     = handlingChunk;
                 handlingChunk = eastChunk;
             }
         }
+
+        std::vector<std::vector<float>>* northChunkShadowData;
+        std::vector<std::vector<float>>* handlingChunkShadowData;
+        std::vector<std::vector<float>>* southChunkShadowData;
+        auto                             getShadowData2 =
+            [&northChunkShadowData, &handlingChunkShadowData, &southChunkShadowData, &scale](int sx, int sz) {
+                if (sz < 0) return (*northChunkShadowData)[northChunkShadowData->size() + sz][sx];
+                else if (sz < 16 * scale) return (*handlingChunkShadowData)[sz][sx];
+                else return (*southChunkShadowData)[sz - 16 * scale][sx];
+            };
+        for (int chunkX = 0; chunkX < 16; chunkX++) {
+            northChunkShadowData    = &northShadowData[chunkX];
+            handlingChunkShadowData = &shadowTempData[0][chunkX];
+            for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
+                if (chunkZ < 15) southChunkShadowData = &shadowTempData[chunkZ + 1][chunkX];
+                else southChunkShadowData = &southShadowData[chunkX];
+                auto handlingChunk = shadow.handlingRegion[chunkZ][chunkX];
+                if (!handlingChunk) continue;
+                for (int sZ = 0; sZ < 16 * scale; sZ++) {
+                    for (int sX = 0; sX < 16 * scale; sX++) {
+                        float sum = 0.0f;
+                        for (int index = sZ - pcfRadius; index <= sZ + pcfRadius; index++)
+                            sum += getShadowData2(sX, index);
+                        handlingChunk->blocksData[sZ / scale][sX / scale].shadowOriginData[sZ % scale][sX % scale] =
+                            sum / static_cast<float>(2 * pcfRadius + 1);
+                    }
+                }
+
+                for (int blockZ = 0; blockZ < 16; blockZ++) {
+                    for (int blockX = 0; blockX < 16; blockX++) {
+                        auto& handlingBlock   = handlingChunk->blocksData[blockZ][blockX];
+                        float finalShadowData = 0.0f;
+                        for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
+                            for (int scaleX = 0; scaleX < scale; scaleX++) {
+                                finalShadowData += handlingBlock.shadowOriginData[scaleZ][scaleX];
+                            }
+                        }
+                        finalShadowData     /= static_cast<float>(scale * scale);
+                        handlingBlock.color  = multiplyColor(handlingBlock.color, finalShadowData);
+                    }
+                }
+
+                northChunkShadowData    = handlingChunkShadowData;
+                handlingChunkShadowData = southChunkShadowData;
+            }
+        }
     }
 }
 
-void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
+// void RegionRenderer::applyBevel(ShadowRegion& shadow, int scale) {
+//     constexpr float kEdgeBright  = 1.18f;
+//     constexpr float kEdgeDark    = 0.72f;
+//     constexpr float kCornerBoost = 0.40f;
+
+//     const int   edgeW = std::max(1, scale / 6);
+//     const float rcpEw = 1.0f / static_cast<float>(edgeW);
+
+//     const int               HR = ShadowRegion::SIZE * scale;
+//     std::vector<BlockColor> hrImage;
+//     upscale(shadow, hrImage, scale, HR);
+
+//     for (int bz = 0; bz < ShadowRegion::SIZE; ++bz) {
+//         for (int bx = 0; bx < ShadowRegion::SIZE; ++bx) {
+//             float h = shadow.getSolidHeight(bx, bz);
+//             if (h <= -128) continue;
+
+//             float hl  = (bx > 0) ? shadow.getSolidHeight(bx - 1, bz) : h;
+//             float hr_ = (bx < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx + 1, bz) : h;
+//             float ht  = (bz > 0) ? shadow.getSolidHeight(bx, bz - 1) : h;
+//             float hb  = (bz < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx, bz + 1) : h;
+
+//             int x0 = bx * scale;
+//             int y0 = bz * scale;
+
+//             for (int dy = 0; dy < scale; ++dy) {
+//                 int   py  = dy;
+//                 float tyT = (py < edgeW) ? 1.0f - py * rcpEw : 0.0f;
+//                 float tyB = (py >= scale - edgeW) ? (py - (scale - edgeW)) * rcpEw : 0.0f;
+//                 for (int dx = 0; dx < scale; ++dx) {
+//                     int   px  = dx;
+//                     float txL = (px < edgeW) ? 1.0f - px * rcpEw : 0.0f;
+//                     float txR = (px >= scale - edgeW) ? (px - (scale - edgeW)) * rcpEw : 0.0f;
+
+//                     if (txL == 0.0f && txR == 0.0f && tyT == 0.0f && tyB == 0.0f) continue;
+
+//                     float factor    = 1.0f;
+//                     auto  applyEdge = [&](float t, float cur, float neigh) {
+//                         if (t <= 0.0f) return;
+//                         if (cur > neigh) factor *= 1.0f + (kEdgeBright - 1.0f) * t;
+//                         else if (cur < neigh) factor *= 1.0f + (kEdgeDark - 1.0f) * t;
+//                     };
+//                     applyEdge(txL, h, hl);
+//                     applyEdge(txR, h, hr_);
+//                     applyEdge(tyT, h, ht);
+//                     applyEdge(tyB, h, hb);
+
+//                     auto applyCorner = [&](float tc, float n1, float n2) {
+//                         if (tc <= 0.0f) return;
+//                         if (h > n1 && h > n2) factor *= 1.0f + (kEdgeBright - 1.0f) * tc * kCornerBoost;
+//                         else if (h < n1 && h < n2) factor *= 1.0f + (kEdgeDark - 1.0f) * tc * kCornerBoost;
+//                     };
+//                     applyCorner(std::min(txL, tyT), hl, ht);
+//                     applyCorner(std::min(txR, tyT), hr_, ht);
+//                     applyCorner(std::min(txL, tyB), hl, hb);
+//                     applyCorner(std::min(txR, tyB), hr_, hb);
+
+//                     if (factor == 1.0f) continue;
+//                     factor = std::clamp(factor, 0.55f, 1.58f);
+
+//                     int hi                = x0 + dx;
+//                     int hj                = y0 + dy;
+//                     hrImage[hj * HR + hi] = multiplyColor(hrImage[hj * HR + hi], factor);
+//                 }
+//             }
+//         }
+//     }
+
+//     downsample(hrImage, shadow, scale, HR);
+// }
+
+std::array<float, 81> buildBevelTable(int scale) {
     constexpr float kEdgeBright  = 1.18f;
     constexpr float kEdgeDark    = 0.72f;
     constexpr float kCornerBoost = 0.40f;
 
-    const int   edgeW = std::max(1, scale / 6);
-    const float rcpEw = 1.0f / static_cast<float>(edgeW);
+    const int   edgeW       = std::max(1, scale / 6);
+    const float rcpEw       = 1.0f / static_cast<float>(edgeW);
+    const int   totalPixels = scale * scale;
 
-    const int               HR = ShadowRegion::SIZE * scale;
-    std::vector<BlockColor> hrImage;
-    upscale(shadow, hrImage, scale, HR);
+    std::array<float, 81> table{};
 
-    for (int bz = 0; bz < ShadowRegion::SIZE; ++bz) {
-        for (int bx = 0; bx < ShadowRegion::SIZE; ++bx) {
-            float h = shadow.getSolidHeight(bx, bz);
-            if (h <= -128) continue;
+    // 枚举所有关系组合
+    for (int hl = 0; hl < 3; ++hl)
+        for (int hr = 0; hr < 3; ++hr)
+            for (int ht = 0; ht < 3; ++ht)
+                for (int hb = 0; hb < 3; ++hb) {
+                    float sumFactor = 0.0f;
 
-            float hl  = (bx > 0) ? shadow.getSolidHeight(bx - 1, bz) : h;
-            float hr_ = (bx < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx + 1, bz) : h;
-            float ht  = (bz > 0) ? shadow.getSolidHeight(bx, bz - 1) : h;
-            float hb  = (bz < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx, bz + 1) : h;
+                    for (int dy = 0; dy < scale; ++dy) {
+                        float tyT = (dy < edgeW) ? 1.0f - static_cast<float>(dy) * rcpEw : 0.0f;
+                        float tyB = (dy >= scale - edgeW) ? static_cast<float>(dy - (scale - edgeW)) * rcpEw : 0.0f;
 
-            int x0 = bx * scale;
-            int y0 = bz * scale;
+                        for (int dx = 0; dx < scale; ++dx) {
+                            float txL = (dx < edgeW) ? 1.0f - static_cast<float>(dx) * rcpEw : 0.0f;
+                            float txR = (dx >= scale - edgeW) ? static_cast<float>(dx - (scale - edgeW)) * rcpEw : 0.0f;
 
-            for (int dy = 0; dy < scale; ++dy) {
-                int   py  = dy;
-                float tyT = (py < edgeW) ? 1.0f - py * rcpEw : 0.0f;
-                float tyB = (py >= scale - edgeW) ? (py - (scale - edgeW)) * rcpEw : 0.0f;
-                for (int dx = 0; dx < scale; ++dx) {
-                    int   px  = dx;
-                    float txL = (px < edgeW) ? 1.0f - px * rcpEw : 0.0f;
-                    float txR = (px >= scale - edgeW) ? (px - (scale - edgeW)) * rcpEw : 0.0f;
+                            if (txL == 0.0f && txR == 0.0f && tyT == 0.0f && tyB == 0.0f) {
+                                sumFactor += 1.0f;
+                                continue;
+                            }
 
-                    if (txL == 0.0f && txR == 0.0f && tyT == 0.0f && tyB == 0.0f) continue;
+                            float factor = 1.0f;
 
-                    float factor    = 1.0f;
-                    auto  applyEdge = [&](float t, float cur, float neigh) {
-                        if (t <= 0.0f) return;
-                        if (cur > neigh) factor *= 1.0f + (kEdgeBright - 1.0f) * t;
-                        else if (cur < neigh) factor *= 1.0f + (kEdgeDark - 1.0f) * t;
-                    };
-                    applyEdge(txL, h, hl);
-                    applyEdge(txR, h, hr_);
-                    applyEdge(tyT, h, ht);
-                    applyEdge(tyB, h, hb);
+                            // 边缘效应
+                            auto applyEdge = [&](float t, int rel) {
+                                if (t <= 0.0f) return;
+                                if (rel == 1) factor *= 1.0f + (kEdgeBright - 1.0f) * t;
+                                else if (rel == 2) factor *= 1.0f + (kEdgeDark - 1.0f) * t;
+                            };
+                            applyEdge(txL, hl);
+                            applyEdge(txR, hr);
+                            applyEdge(tyT, ht);
+                            applyEdge(tyB, hb);
 
-                    auto applyCorner = [&](float tc, float n1, float n2) {
-                        if (tc <= 0.0f) return;
-                        if (h > n1 && h > n2) factor *= 1.0f + (kEdgeBright - 1.0f) * tc * kCornerBoost;
-                        else if (h < n1 && h < n2) factor *= 1.0f + (kEdgeDark - 1.0f) * tc * kCornerBoost;
-                    };
-                    applyCorner(std::min(txL, tyT), hl, ht);
-                    applyCorner(std::min(txR, tyT), hr_, ht);
-                    applyCorner(std::min(txL, tyB), hl, hb);
-                    applyCorner(std::min(txR, tyB), hr_, hb);
+                            // 角落效应
+                            auto applyCorner = [&](float tc, int r1, int r2) {
+                                if (tc <= 0.0f) return;
+                                if (r1 == 1 && r2 == 1) factor *= 1.0f + (kEdgeBright - 1.0f) * tc * kCornerBoost;
+                                else if (r1 == 2 && r2 == 2) factor *= 1.0f + (kEdgeDark - 1.0f) * tc * kCornerBoost;
+                            };
+                            applyCorner(std::min(txL, tyT), hl, ht);
+                            applyCorner(std::min(txR, tyT), hr, ht);
+                            applyCorner(std::min(txL, tyB), hl, hb);
+                            applyCorner(std::min(txR, tyB), hr, hb);
 
-                    if (factor == 1.0f) continue;
-                    factor = std::clamp(factor, 0.55f, 1.58f);
+                            factor     = std::clamp(factor, 0.55f, 1.58f);
+                            sumFactor += factor;
+                        }
+                    }
 
-                    int hi                = x0 + dx;
-                    int hj                = y0 + dy;
-                    hrImage[hj * HR + hi] = multiplyColor(hrImage[hj * HR + hi], factor);
+                    int index    = hl * 27 + hr * 9 + ht * 3 + hb;
+                    table[index] = sumFactor / static_cast<float>(totalPixels);
                 }
-            }
-        }
-    }
 
-    downsample(hrImage, shadow, scale, HR);
+    return table;
 }
 
-void RegionRenderer::applyStyle2(ShadowRegion& shadow) {
+void RegionRenderer::applyBevel(ShadowRenderData& shadow, int scale) {
+    // 静态缓存：表 + 上次使用的scale
+    static std::array<float, 81> cachedTable;
+    static int                   cachedScale = -1;
+
+    // 仅在scale变化时重建表
+    if (scale != cachedScale) {
+        cachedTable = buildBevelTable(scale);
+        cachedScale = scale;
+    }
+
+    int dimId = shadow.handlingRegionPos.dimId;
+
+    // const auto& table = cachedTable;
+
+    // for (int bz = 0; bz < ShadowRegion::SIZE; ++bz) {
+    //     for (int bx = 0; bx < ShadowRegion::SIZE; ++bx) {
+    //         float h = shadow.getSolidHeight(bx, bz);
+    //         if (h <= -128) continue;
+
+    //         auto getRel = [&](float neigh) -> HeightRel {
+    //             if (neigh > h) return 1;
+    //             if (neigh < h) return 2;
+    //             return 0;
+    //         };
+
+    //         float hl = (bx > 0) ? shadow.getSolidHeight(bx - 1, bz) : h;
+    //         float hr = (bx < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx + 1, bz) : h;
+    //         float ht = (bz > 0) ? shadow.getSolidHeight(bx, bz - 1) : h;
+    //         float hb = (bz < ShadowRegion::SIZE - 1) ? shadow.getSolidHeight(bx, bz + 1) : h;
+
+    //         HeightRel rl = getRel(hl);
+    //         HeightRel rr = getRel(hr);
+    //         HeightRel rt = getRel(ht);
+    //         HeightRel rb = getRel(hb);
+
+    //         int index = (static_cast<int>(rl) * 27) + (static_cast<int>(rr) * 9) + (static_cast<int>(rt) * 3)
+    //                   + (static_cast<int>(rb) * 1);
+
+    //         float avgFactor = table[index];
+    //         if (avgFactor != 1.0f) {
+    //             BlockColor original = shadow.getPixel(bx, bz);
+    //             shadow.setPixel(bx, bz, multiplyColor(original, avgFactor));
+    //         }
+    //     }
+    // }
+
+    float h      = 0.0f;
+    auto  getRel = [&](float neigh) {
+        if (neigh > h) return 1;
+        if (neigh < h) return 2;
+        return 0;
+    };
+
+    for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
+        auto westChunk = shadow.getChunk(ChunkPosWithDim{-1, chunkZ, dimId});
+        for (int chunkX = 0; chunkX < 16; chunkX++) {
+            auto handlingChunk = shadow.handlingRegion[chunkZ][0];
+            if (!handlingChunk) continue;
+            auto eastChunk  = shadow.getChunk(ChunkPosWithDim{chunkX + 1, chunkZ, dimId});
+            auto northChunk = shadow.getChunk(ChunkPosWithDim{chunkX, chunkZ - 1, dimId});
+            auto southChunk = shadow.getChunk(ChunkPosWithDim{chunkX, chunkZ + 1, dimId});
+            for (int blockZ = 0; blockZ < 16; blockZ++) {
+                float hw = westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ}).solidHeight;
+                h        = handlingChunk->getBlockBaseData(ChunkWorldPos{0, blockZ}).solidHeight;
+                for (int blockX = 0; blockX < 16; blockX++) {
+                    float he = blockX != 15
+                                 ? handlingChunk->getBlockBaseData(ChunkWorldPos{blockX + 1, blockZ}).solidHeight
+                                 : eastChunk->getBlockBaseData(ChunkWorldPos{0, blockZ}).solidHeight;
+                    float hn = blockZ ? handlingChunk->getBlockBaseData(ChunkWorldPos{blockX, blockZ - 1}).solidHeight
+                                      : northChunk->getBlockBaseData(ChunkWorldPos{blockX, 15}).solidHeight;
+                    float hs = blockZ != 15
+                                 ? handlingChunk->getBlockBaseData(ChunkWorldPos{blockX, blockZ + 1}).solidHeight
+                                 : southChunk->getBlockBaseData(ChunkWorldPos{blockX, 0}).solidHeight;
+
+                    int rw = getRel(hw);
+                    int re = getRel(he);
+                    int rn = getRel(hn);
+                    int rs = getRel(hs);
+
+                    int index = rw * 27 + re * 9 + rn * 3 + rs;
+
+                    float avgFactor = cachedTable[index];
+
+                    if (avgFactor != 1.0f) {
+                        auto& color = handlingChunk->getBlockData(ChunkWorldPos{blockX, blockZ}).color;
+                        color       = multiplyColor(color, avgFactor);
+                    }
+                    hw = h;
+                    h  = he;
+                }
+            }
+            westChunk = handlingChunk;
+        }
+    }
+}
+
+void RegionRenderer::applyStyle2(ShadowRenderData& shadow) {
     auto& cfg   = config::getConfig().terrain.shadow;
     int   scale = std::clamp(cfg.renderScale, 1, 16);
 

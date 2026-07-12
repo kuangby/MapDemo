@@ -7,6 +7,9 @@
 namespace map_demo {
 class ChunkDataBase {
 public:
+    int shadowScale = -1;
+
+public:
     virtual ~ChunkDataBase() = default;
 
 public:

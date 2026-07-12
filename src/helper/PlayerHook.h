@@ -15,11 +15,12 @@
 
 
 #include "config/Config.h"
+#include "data/cache/MapCacheManager.h"
 #include "mod/MapDemo.h"
-#include "state/MapCacheManager.h"
 #include "state/MapState.h"
-#include "state/RegionRenderer.h"
 #include "state/TerrainScanner.h"
+#include "state/render/RegionRenderer.h"
+
 
 namespace map_demo {
 
@@ -66,13 +67,13 @@ LL_TYPE_INSTANCE_HOOK(
         // 地形扫描
         auto& cfg = config::getConfig();
         if (cfg.terrain.enable) {
-            auto& dimObj = player->getDimension();
-            int   minY   = dimObj.mHeightRange->mMin;
-            int   maxY   = dimObj.mHeightRange->mMax - 1;
-            auto  pChunk = ChunkManager::worldToChunk(pos.x, pos.z);
-            int   dim    = static_cast<int>(player->getDimensionId());
-            TerrainScanner::getInstance().update(this->getRegion(), pChunk.x, pChunk.z, dim, minY, maxY);
-            MapCacheManager::getInstance().evictRegionsOutsideRadius(pChunk.x, pChunk.z, dim, cfg.terrain.scanRadius);
+            auto pChunk = ChunkPos(pos.x, pos.z);
+            int  dim    = static_cast<int>(player->getDimensionId());
+            TerrainScanner::getInstance().update(this->getRegion(), ChunkPosWithDim{pChunk.x, pChunk.z, dim});
+            MapCacheManager::getInstance().evictRegionsOutsideRadius(
+                ChunkPosWithDim{pChunk.x, pChunk.z, dim},
+                cfg.terrain.scanRadius
+            );
         }
     } else {
         if (s_wasInWorld) {

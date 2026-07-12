@@ -141,7 +141,7 @@ BlockColor processWater(LevelChunk* chunk, int cx, int cz, int waterSurfaceY, in
 // 基于 cameraHeight 的方块颜色获取，同时返回高度信息
 BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight) {
     int minY  = chunk->mMin->y;
-    int maxY  = chunk->mMax->y;
+    int maxY  = chunk->mMax->y - 1;
     int dimId = chunk->mDimension.getDimensionId();
 
     // 高度信息

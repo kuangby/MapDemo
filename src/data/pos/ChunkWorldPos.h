@@ -16,8 +16,8 @@ public:
     [[nodiscard]] explicit ChunkWorldPos(WorldPos worldPos) noexcept {
         int chunkX = worldPos.x < 0 ? ((worldPos.x + 1) / 16) - 1 : worldPos.x / 16;
         int chunkZ = worldPos.z < 0 ? ((worldPos.z + 1) / 16) - 1 : worldPos.z / 16;
-        x          = chunkX * 16 - worldPos.x;
-        z          = chunkZ * 16 - worldPos.z;
+        x          = worldPos.x - chunkX * 16;
+        z          = worldPos.z - chunkZ * 16;
     }
 };
 

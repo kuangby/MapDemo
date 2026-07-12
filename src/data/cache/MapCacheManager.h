@@ -45,13 +45,13 @@ public:
     bool initializeDiskCache(const std::filesystem::path& path);
 
     // 磁盘缓存读写
-    void               saveToDisk(const RegionPos& regionPos, std::shared_ptr<RegionCacheData> data);
-    bool               loadFromDisk(const RegionPos& regionPos, std::shared_ptr<RegionCacheData> data);
-    static std::string makeDiskKey(const RegionPos& regionPos);
-    std::string        serializeRegionData(std::shared_ptr<RegionCacheData> data);
-    bool               deserializeRegionData(std::shared_ptr<RegionCacheData> data, const std::string& blob);
+    void saveToDisk(const RegionPos& regionPos, std::shared_ptr<RegionCacheData> data) {};
+    bool loadFromDisk(const RegionPos& regionPos, std::shared_ptr<RegionCacheData> data) { return false; };
+    static std::string makeDiskKey(const RegionPos& regionPos) { return ""; };
+    std::string        serializeRegionData(std::shared_ptr<RegionCacheData> data) { return ""; };
+    bool deserializeRegionData(std::shared_ptr<RegionCacheData> data, const std::string& blob) { return false; };
 
-    void evictRegionsOutsideRadius(ChunkPosWithDim centerChunkPos, int radiusChunks);
+    void evictRegionsOutsideRadius(ChunkPosWithDim centerChunkPos, int radiusChunks) {};
 
 private:
     MapCacheManager() = default;

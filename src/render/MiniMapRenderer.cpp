@@ -1,8 +1,14 @@
 #include "render/MiniMapRenderer.h"
 
 #include "config/Config.h"
+#include "data/BlockColor.h"
+#include "data/pos/ChunkWorldPos.h"
+#include "data/pos/RegionChunkPos.h"
+#include "data/pos/RegionPos.h"
+#include "data/pos/WorldPos.h"
 #include "mod/MapDemo.h"
-#include "state/RegionRenderer.h"
+#include "state/render/RegionRenderer.h"
+
 
 #include <imgui.h>
 
@@ -11,10 +17,10 @@
 #include <cmath>
 #include <cstdio>
 
-#include "state/BlockColorManager.h"
+#include "data/cache/MapCacheManager.h"
 #include "state/ChunkManager.h"
-#include "state/MapCacheManager.h"
 #include "state/MapState.h"
+
 
 namespace map_demo {
 
@@ -47,10 +53,17 @@ bool pointInCircle(const ImVec2& p, const ImVec2& center, float radius) {
     return dx * dx + dy * dy <= radius * radius;
 }
 
-bool clipLineToCircle(const ImVec2& a, const ImVec2& b, const ImVec2& center, float radius, ImVec2& outA, ImVec2& outB) {
-    float r2 = radius * radius;
-    ImVec2 d = ImVec2(b.x - a.x, b.y - a.y);
-    ImVec2 f = ImVec2(a.x - center.x, a.y - center.y);
+bool clipLineToCircle(
+    const ImVec2& a,
+    const ImVec2& b,
+    const ImVec2& center,
+    float         radius,
+    ImVec2&       outA,
+    ImVec2&       outB
+) {
+    float  r2 = radius * radius;
+    ImVec2 d  = ImVec2(b.x - a.x, b.y - a.y);
+    ImVec2 f  = ImVec2(a.x - center.x, a.y - center.y);
 
     float A = d.x * d.x + d.y * d.y;
     float B = 2.0f * (f.x * d.x + f.y * d.y);
@@ -75,7 +88,7 @@ bool clipLineToCircle(const ImVec2& a, const ImVec2& b, const ImVec2& center, fl
         return false;
     }
 
-    disc = std::sqrt(disc);
+    disc     = std::sqrt(disc);
     float t1 = (-B - disc) / (2.0f * A);
     float t2 = (-B + disc) / (2.0f * A);
 
@@ -92,15 +105,15 @@ bool clipLineToCircle(const ImVec2& a, const ImVec2& b, const ImVec2& center, fl
 
 // 绘制一个方块的地表颜色，限制在圆形范围内
 void drawTerrainPixel(
-    ImDrawList* drawList,
-    float       worldX,
-    float       worldZ,
-    BlockColor  color,
+    ImDrawList*   drawList,
+    float         worldX,
+    float         worldZ,
+    BlockColor    color,
     const ImVec2& center,
-    float       radius,
-    float       cx,
-    float       cy,
-    float       scale
+    float         radius,
+    float         cx,
+    float         cy,
+    float         scale
 ) {
     if (color.a == 0) return;
 
@@ -121,9 +134,9 @@ void drawTerrainPixel(
 } // namespace
 
 void MiniMapRenderer::render() {
-    auto renderT0 = Clock::now();
-    auto& cfg = config::getConfig();
-    auto& mmc = cfg.miniMap;
+    auto  renderT0 = Clock::now();
+    auto& cfg      = config::getConfig();
+    auto& mmc      = cfg.miniMap;
 
     static int s_renderCount = 0;
     ++s_renderCount;
@@ -159,44 +172,128 @@ void MiniMapRenderer::render() {
     };
 
     // 请求异步烘焙本帧涉及的所有 region
-    auto requestBake = [&](const RegionPos& pos, const std::shared_ptr<RegionData>& data) {
-        if (!data || !data->bakedDirty) return;
-        RegionRenderer::getInstance().requestBake(data, pos, pos.dim);
-    };
+    // auto requestBake = [&](const RegionPos& pos, const std::shared_ptr<RegionCacheData>& data) {
+    //     if (!data || !data->isBakedDirty()) return;
+    //     RegionRenderer::getInstance().requestBake(data, pos, pos.dimId);
+    // };
 
     // 绘制地形
     if (cfg.terrain.enable) {
-        int dim = state.dimensionId();
+        auto& mapCacheManager = MapCacheManager::getInstance();
+        auto& regionRenderer  = RegionRenderer::getInstance();
+
+        int dimId = state.dimensionId();
 
         int minWorldX = static_cast<int>(std::floor(smoothX - renderRadiusBlocks));
         int maxWorldX = static_cast<int>(std::floor(smoothX + renderRadiusBlocks));
         int minWorldZ = static_cast<int>(std::floor(smoothZ - renderRadiusBlocks));
         int maxWorldZ = static_cast<int>(std::floor(smoothZ + renderRadiusBlocks));
 
-        for (int worldZ = minWorldZ; worldZ <= maxWorldZ; ++worldZ) {
-            for (int worldX = minWorldX; worldX <= maxWorldX; ++worldX) {
-                auto pos   = MapCacheManager::worldToRegion(worldX, worldZ, dim);
-                auto data = MapCacheManager::getInstance().getRegion(pos);
-                if (!data) continue;
+        // for (int worldZ = minWorldZ; worldZ <= maxWorldZ; ++worldZ) {
+        //     for (int worldX = minWorldX; worldX <= maxWorldX; ++worldX) {
+        //         auto pos = RegionPos(WorldPos{worldX, worldZ, dim});
+        //         auto data = MapCacheManager::getInstance().getRegion(pos);
+        //         if (!data) continue;
 
-                int localX = worldX - (pos.x * RegionData::SIZE);
-                int localZ = worldZ - (pos.z * RegionData::SIZE);
-                if (localX < 0) localX += RegionData::SIZE;
-                if (localZ < 0) localZ += RegionData::SIZE;
+        //         int localX = worldX - (pos.x * RegionData::SIZE);
+        //         int localZ = worldZ - (pos.z * RegionData::SIZE);
+        //         if (localX < 0) localX += RegionData::SIZE;
+        //         if (localZ < 0) localZ += RegionData::SIZE;
 
-                auto color = data->getPixel(localX, localZ);
-                if (color.a == 0) continue;
+        //         auto color = data->getPixel(localX, localZ);
+        //         if (color.a == 0) continue;
 
-                requestBake(pos, data);
-                color = data->getBakedPixel(localX, localZ);
+        //         requestBake(pos, data);
+        //         color = data->getBakedPixel(localX, localZ);
 
-                drawTerrainPixel(drawList, static_cast<float>(worldX), static_cast<float>(worldZ), color,
-                                 ImVec2(smoothX, smoothZ), radius - 1.0f, cx, cy, scale);
+        //         drawTerrainPixel(
+        //             drawList,
+        //             static_cast<float>(worldX),
+        //             static_cast<float>(worldZ),
+        //             color,
+        //             ImVec2(smoothX, smoothZ),
+        //             radius - 1.0f,
+        //             cx,
+        //             cy,
+        //             scale
+        //         );
+        //     }
+        // }
+        auto minWorldPos = WorldPos{minWorldX, minWorldZ, dimId};
+        auto maxWorldPos = WorldPos{maxWorldX, maxWorldZ, dimId};
+
+        auto minRegionPos = RegionPos{minWorldPos};
+        auto maxRegionPos = RegionPos{maxWorldPos};
+
+        auto minRegionChunkPos = RegionChunkPos{minWorldPos};
+        auto maxRegionChunkPos = RegionChunkPos{maxWorldPos};
+
+        auto minChunkWorldPos = ChunkWorldPos{minWorldPos};
+        auto maxChunkWorldPos = ChunkWorldPos{maxWorldPos};
+
+        for (int regionPosZ = minRegionPos.z; regionPosZ <= maxRegionPos.z; regionPosZ++) {
+            for (int regionPosX = minRegionPos.x; regionPosX <= maxRegionPos.x; regionPosX++) {
+                auto regionPos = RegionPos{regionPosX, regionPosZ, dimId};
+                auto region    = mapCacheManager.getRegion(regionPos);
+
+                if (!region) continue;
+
+                if (region->isBakedDirty()) regionRenderer.requestBake(region, regionPos, dimId);
+
+                auto minChunkPos = RegionChunkPos(0, 0);
+                if (regionPosX == minRegionPos.x) minChunkPos.x = minRegionChunkPos.x;
+                if (regionPosZ == minRegionPos.z) minChunkPos.z = minRegionChunkPos.z;
+
+                auto maxChunkPos = RegionChunkPos(15, 15);
+                if (regionPosX == maxRegionPos.x) maxChunkPos.x = maxRegionChunkPos.x;
+                if (regionPosZ == maxRegionPos.z) maxChunkPos.z = maxRegionChunkPos.z;
+
+                for (int chunkPosZ = minChunkPos.z; chunkPosZ <= maxChunkPos.z; chunkPosZ++) {
+                    for (int chunkPosX = minChunkPos.x; chunkPosX <= maxChunkPos.x; chunkPosX++) {
+                        auto chunkPos = RegionChunkPos{chunkPosX, chunkPosZ};
+                        auto chunk    = region->getChunkData(chunkPos);
+
+                        if (!chunk) continue;
+
+                        auto minPos = ChunkWorldPos(0, 0);
+                        if (regionPosX == minRegionPos.x && chunkPosX == minChunkPos.x) minPos.x = minChunkWorldPos.x;
+                        if (regionPosZ == minRegionPos.z && chunkPosZ == minChunkPos.z) minPos.z = minChunkWorldPos.z;
+
+                        auto maxPos = ChunkWorldPos(15, 15);
+                        if (regionPosX == maxRegionPos.x && chunkPosX == maxChunkPos.x) maxPos.x = maxChunkWorldPos.x;
+                        if (regionPosZ == maxRegionPos.z && chunkPosZ == maxChunkPos.z) maxPos.z = maxChunkWorldPos.z;
+
+                        for (int posZ = minPos.z; posZ <= maxPos.z; posZ++) {
+                            for (int posX = minPos.x; posX <= maxPos.x; posX++) {
+                                auto       pos       = ChunkWorldPos{posX, posZ};
+                                auto&      blockData = chunk->getBlockCacheData(pos);
+                                BlockColor color;
+                                if (blockData.bakedColor.a) color = blockData.bakedColor;
+                                else if (blockData.color.a) color = blockData.color;
+                                else continue;
+
+                                auto worldPos = WorldPos{regionPos, chunkPos, pos};
+
+                                drawTerrainPixel(
+                                    drawList,
+                                    static_cast<float>(worldPos.x),
+                                    static_cast<float>(worldPos.z),
+                                    color,
+                                    ImVec2(smoothX, smoothZ),
+                                    radius - 1.0f,
+                                    cx,
+                                    cy,
+                                    scale
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    auto centerChunk = ChunkManager::worldToChunk(smoothX, smoothZ);
+    auto centerChunk = ChunkPos(smoothX, smoothZ);
 
     ImU32 chunkLineColor    = toImCol32(mmc.chunkLineColor);
     ImU32 currentChunkColor = toImCol32(mmc.currentChunkColor);
@@ -208,25 +305,31 @@ void MiniMapRenderer::render() {
     for (const auto& [z, xRange] : gridLines.horizontal) {
         ImVec2 p1 = worldToScreen(xRange.first, z);
         ImVec2 p2 = worldToScreen(xRange.second, z);
-        if (clipLineToCircle(p1, p2, center, lineClipRadius, a, b)) drawList->AddLine(a, b, chunkLineColor, mmc.lineThickness);
+        if (clipLineToCircle(p1, p2, center, lineClipRadius, a, b))
+            drawList->AddLine(a, b, chunkLineColor, mmc.lineThickness);
     }
     for (const auto& [x, zRange] : gridLines.vertical) {
         ImVec2 p1 = worldToScreen(x, zRange.first);
         ImVec2 p2 = worldToScreen(x, zRange.second);
-        if (clipLineToCircle(p1, p2, center, lineClipRadius, a, b)) drawList->AddLine(a, b, chunkLineColor, mmc.lineThickness);
+        if (clipLineToCircle(p1, p2, center, lineClipRadius, a, b))
+            drawList->AddLine(a, b, chunkLineColor, mmc.lineThickness);
     }
 
     {
-        auto bounds = ChunkManager::getChunkBounds(centerChunk.x, centerChunk.z);
-        ImVec2 tl   = worldToScreen(bounds.minX, bounds.minZ);
-        ImVec2 tr   = worldToScreen(bounds.maxX, bounds.minZ);
-        ImVec2 br   = worldToScreen(bounds.maxX, bounds.maxZ);
-        ImVec2 bl   = worldToScreen(bounds.minX, bounds.maxZ);
+        auto   bounds = ChunkManager::getChunkBounds(centerChunk.x, centerChunk.z);
+        ImVec2 tl     = worldToScreen(bounds.minX, bounds.minZ);
+        ImVec2 tr     = worldToScreen(bounds.maxX, bounds.minZ);
+        ImVec2 br     = worldToScreen(bounds.maxX, bounds.maxZ);
+        ImVec2 bl     = worldToScreen(bounds.minX, bounds.maxZ);
 
-        if (clipLineToCircle(tl, tr, center, lineClipRadius, a, b)) drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
-        if (clipLineToCircle(tr, br, center, lineClipRadius, a, b)) drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
-        if (clipLineToCircle(br, bl, center, lineClipRadius, a, b)) drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
-        if (clipLineToCircle(bl, tl, center, lineClipRadius, a, b)) drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
+        if (clipLineToCircle(tl, tr, center, lineClipRadius, a, b))
+            drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
+        if (clipLineToCircle(tr, br, center, lineClipRadius, a, b))
+            drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
+        if (clipLineToCircle(br, bl, center, lineClipRadius, a, b))
+            drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
+        if (clipLineToCircle(bl, tl, center, lineClipRadius, a, b))
+            drawList->AddLine(a, b, currentChunkColor, mmc.lineThickness);
     }
 
     float yawRad = state.renderYawRad();
@@ -254,7 +357,14 @@ void MiniMapRenderer::render() {
     );
 
     char coordBuf[64];
-    snprintf(coordBuf, sizeof(coordBuf), "%d, %d, %d", state.player().blockX(), state.player().blockY(), state.player().blockZ());
+    snprintf(
+        coordBuf,
+        sizeof(coordBuf),
+        "%d, %d, %d",
+        state.player().blockX(),
+        state.player().blockY(),
+        state.player().blockZ()
+    );
     ImVec2 textSize = ImGui::CalcTextSize(coordBuf);
     ImVec2 textPos(cx - textSize.x * 0.5f, cy + radius + mmc.coordTextMargin);
     drawList->AddText(ImVec2(textPos.x + 1.0f, textPos.y + 1.0f), toImCol32(mmc.coordShadowColor), coordBuf);
@@ -265,7 +375,9 @@ void MiniMapRenderer::render() {
     if (s_renderCount % 60 == 0) {
         auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - renderT0).count();
         MapDemo::getInstance().getSelf().getLogger().debug(
-            "MiniMapRenderer::render: count={}, total={}us", s_renderCount, totalUs
+            "MiniMapRenderer::render: count={}, total={}us",
+            s_renderCount,
+            totalUs
         );
     }
 }

@@ -98,7 +98,6 @@ void RegionRenderer::clearQueueAndWait() {
         while (!queue_.empty()) {
             queue_.pop();
         }
-        pending_.clear();
     }
     cv_.notify_all();
 
@@ -125,8 +124,6 @@ void RegionRenderer::requestBake(const std::shared_ptr<RegionCacheData>& data, c
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!data->isBakedDirty()) return;
-        if (pending_.count(pos)) return; // already queued
-        pending_.insert(pos);
         queue_.push(BakeTask{data, dim, pos});
     }
     cv_.notify_one();
@@ -152,11 +149,6 @@ void RegionRenderer::workerLoop() {
         auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
         baking_.store(false, std::memory_order_release);
 
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            pending_.erase(task.pos);
-        }
-
         static int s_workerLog = 0;
         if ((++s_workerLog % 10) == 0 || us > 50000) {
             MapDemo::getInstance().getSelf().getLogger().debug(
@@ -175,7 +167,7 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
 
     // Snapshot raw data under lock, then bake offline without holding the lock
     ShadowRenderData shadow(pos);
-    if (!data->isBakedDirty()) return;
+    if (!data->takeBakedDirty()) return;
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
@@ -211,7 +203,6 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
             chunkData->shadowScale = shadowChunkData->shadowScale;
         }
     }
-    data->resetBakedDirty();
 }
 
 // Style 1: simple heightmap gradient shadow, light from northwest

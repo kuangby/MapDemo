@@ -11,7 +11,6 @@
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <unordered_set>
 
 namespace map_demo {
 
@@ -30,7 +29,7 @@ public:
     // 清空队列并等待当前后台烘焙完成（世界切换前调用）
     void clearQueueAndWait();
 
-    // 请求异步烘焙一个 region；如果烘焙中或未变脏不会重复提交
+    // 请求异步烘焙一个 region；未变脏则不会提交
     void requestBake(const std::shared_ptr<RegionCacheData>& data, const RegionPos& pos, int dim);
 
     // // 同步烘焙（紧急情况或退化为 Style 0/1 时可用）
@@ -62,7 +61,6 @@ private:
     std::mutex                                          mutex_;
     std::condition_variable                             cv_;
     std::queue<BakeTask>                                queue_;
-    std::unordered_set<RegionPos, std::hash<RegionPos>> pending_;
     std::atomic_bool                                    baking_{false};
     bool                                                stop_{false};
 };

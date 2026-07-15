@@ -208,7 +208,7 @@ void MiniMapRenderer::render() {
 
                 if (!region) continue;
 
-                if (region->isBakedDirty()) regionRenderer.requestBake(region, regionPos, dimId);
+                if (region->tickBakedDirty()) regionRenderer.requestBake(region, regionPos, dimId);
 
                 auto minChunkPos = RegionChunkPos(0, 0);
                 if (regionPosX == minRegionPos.x) minChunkPos.x = minRegionChunkPos.x;

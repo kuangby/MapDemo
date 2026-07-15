@@ -208,8 +208,8 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
     bool changed = false;
     {
         std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
-        for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
-            for (int chunkWorldPosZ = 0; chunkWorldPosZ < 16; ++chunkWorldPosZ) {
+        for (int chunkWorldPosZ = 0; chunkWorldPosZ < 16; ++chunkWorldPosZ) {
+            for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
                 auto color = getTerrainPixelAtCameraHeight(chunk, {chunkWorldPosX, chunkWorldPosZ}, cameraHeight);
 
                 int idx = chunkWorldPosZ * 16 + chunkWorldPosX;
@@ -243,8 +243,8 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
             }
         }
         chunkData->lastScanFrame = totalFrames_;
-        if (changed) regionData->markBakedDirty();
     }
+    if (changed) regionData->markBakedDirty();
 
     auto       us         = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
     static int s_chunkLog = 0;

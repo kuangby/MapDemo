@@ -117,7 +117,7 @@ BlockColor processWater(LevelChunk* chunk, int cx, int cz, int waterSurfaceY, in
 
         // 计算水深和透明度（与 BedrockMap 相同的线性混合公式）
         int   waterDepth   = waterSurfaceY - solidY;
-        float waterOpacity = std::min(0.1f * static_cast<float>(waterDepth), 0.7f);
+        float waterOpacity = std::min(0.1f * static_cast<float>(waterDepth), 0.9f);
 
         // 线性混合：(1 - opacity) * solid + opacity * water
         BlockColor finalColor;

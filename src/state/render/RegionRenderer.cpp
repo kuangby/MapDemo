@@ -520,13 +520,32 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
                 else southChunkShadowData = &southShadowData[chunkX];
                 auto handlingChunk = shadow.handlingRegion[chunkZ][chunkX];
                 if (!handlingChunk) continue;
-                for (int sZ = 0; sZ < 16 * scale; sZ++) {
-                    for (int sX = 0; sX < 16 * scale; sX++) {
-                        float sum = 0.0f;
-                        for (int index = sZ - pcfRadius; index <= sZ + pcfRadius; index++)
-                            sum += getShadowData2(sX, index);
-                        handlingChunk->blocksData[sZ / scale][sX / scale].shadowOriginData[sZ % scale][sX % scale] =
-                            sum / static_cast<float>(2 * pcfRadius + 1);
+                // for (int sZ = 0; sZ < 16 * scale; sZ++) {
+                //     for (int sX = 0; sX < 16 * scale; sX++) {
+                //         float sum = 0.0f;
+                //         for (int index = sZ - pcfRadius; index <= sZ + pcfRadius; index++)
+                //             sum += getShadowData2(sX, index);
+                //         handlingChunk->blocksData[sZ / scale][sX / scale].shadowOriginData[sZ % scale][sX % scale] =
+                //             sum / static_cast<float>(2 * pcfRadius + 1);
+                //     }
+                // }
+                for (int blockZ = 0; blockZ < 16; blockZ++) {
+                    for (int blockX = 0; blockX < 16; blockX++) {
+                        auto& handlingBlock = handlingChunk->blocksData[blockZ][blockX];
+                        float sum           = 0.0f;
+                        for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
+                            for (int scaleX = 0; scaleX < scale; scaleX++) {
+                                for (int index = 16 * blockZ + scaleZ - pcfRadius;
+                                     index <= 16 * blockZ + scaleZ + pcfRadius;
+                                     index++) {
+                                    sum += getShadowData2(16 * blockX + scaleX, index);
+                                }
+                            }
+                        }
+                        handlingBlock.color = multiplyColor(
+                            handlingBlock.color,
+                            1.0f - sum / static_cast<float>((2 * pcfRadius + 1) * scale * scale)
+                        );
                     }
                 }
 
@@ -534,22 +553,25 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
                 handlingChunkShadowData = southChunkShadowData;
             }
         }
-    }
-    for (int chunkX = 0; chunkX < 16; chunkX++) {
-        for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
-            auto handlingChunk = shadow.handlingRegion[chunkZ][chunkX];
-            if (!handlingChunk) continue;
-            for (int blockZ = 0; blockZ < 16; blockZ++) {
-                for (int blockX = 0; blockX < 16; blockX++) {
-                    auto& handlingBlock   = handlingChunk->blocksData[blockZ][blockX];
-                    float finalShadowData = 0.0f;
-                    for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
-                        for (int scaleX = 0; scaleX < scale; scaleX++) {
-                            finalShadowData += handlingBlock.shadowOriginData[scaleZ][scaleX];
+    } else {
+        for (int chunkX = 0; chunkX < 16; chunkX++) {
+            for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
+                auto handlingChunk = shadow.handlingRegion[chunkZ][chunkX];
+                if (!handlingChunk) continue;
+                for (int blockZ = 0; blockZ < 16; blockZ++) {
+                    for (int blockX = 0; blockX < 16; blockX++) {
+                        auto& handlingBlock   = handlingChunk->blocksData[blockZ][blockX];
+                        float finalShadowData = 0.0f;
+                        for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
+                            for (int scaleX = 0; scaleX < scale; scaleX++) {
+                                finalShadowData += handlingBlock.shadowOriginData[scaleZ][scaleX];
+                            }
                         }
+                        handlingBlock.color = multiplyColor(
+                            handlingBlock.color,
+                            1.0f - finalShadowData / static_cast<float>(scale * scale)
+                        );
                     }
-                    finalShadowData     /= static_cast<float>(scale * scale);
-                    handlingBlock.color  = multiplyColor(handlingBlock.color, 1.0f - finalShadowData);
                 }
             }
         }

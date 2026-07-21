@@ -8,6 +8,8 @@ namespace map_demo {
 class ChunkDataBase {
 public:
     int shadowScale = -1;
+    int minHeight   = -64;
+    int maxHeight   = -64;
 
 public:
     virtual ~ChunkDataBase() = default;

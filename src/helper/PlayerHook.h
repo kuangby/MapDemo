@@ -19,7 +19,7 @@
 #include "mod/MapDemo.h"
 #include "state/MapState.h"
 #include "state/TerrainScanner.h"
-#include "state/render/RegionRenderer.h"
+#include "state/render/RendererManager.h"
 
 
 namespace map_demo {
@@ -46,7 +46,7 @@ LL_TYPE_INSTANCE_HOOK(
         if (!s_wasInWorld) {
             MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player entered world");
             MapState::getInstance().resetSmoothCamera(pos.x, pos.z, yaw);
-            RegionRenderer::getInstance().clearQueueAndWait();
+            RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
             s_wasInWorld = true;
@@ -84,7 +84,7 @@ LL_TYPE_INSTANCE_HOOK(
         if (s_wasInWorld) {
             MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player left world");
             MapState::getInstance().clearPlayer();
-            RegionRenderer::getInstance().clearQueueAndWait();
+            RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
             s_wasInWorld = false;

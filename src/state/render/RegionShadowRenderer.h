@@ -3,6 +3,7 @@
 
 #include "data/ChunkDataBase.h"
 #include "data/cache/ChunkCacheData.h"
+#include "data/cache/RegionCacheData.h"
 #include "data/cache/MapCacheManager.h"
 #include "data/pos/ChunkPosWithDim.h"
 #include "data/pos/ChunkWorldPos.h"
@@ -18,8 +19,8 @@
 
 
 namespace map_demo {
-// 用于阴影烘焙的区域辅助结构，16x16 chunks
-class ShadowRenderData {
+// 区域阴影渲染器：以 region 为单位进行阴影烘焙，16x16 chunks
+class RegionShadowRenderer {
 public:
     RegionPos                                                              handlingRegionPos;
     std::array<std::array<std::shared_ptr<ShadowRenderChunkData>, 16>, 16> handlingRegion; // 16x16 chunks
@@ -27,7 +28,10 @@ public:
         helperChunksData; // <offsetChunkPos, ChunkCacheData>
 
 public:
-    explicit ShadowRenderData(const RegionPos& pos) : handlingRegionPos(pos) {}
+    explicit RegionShadowRenderer(const RegionPos& pos) : handlingRegionPos(pos) {}
+
+    // 加锁快照一份 RegionData，离线烘焙后写回；未变脏则直接返回
+    void bake(const std::shared_ptr<RegionCacheData>& data);
 
 public:
     [[nodiscard]] std::shared_ptr<ShadowRenderChunkData> getLocalShadowChunkData(const RegionChunkPos& chunkPos) {
@@ -64,5 +68,12 @@ public:
         if (chunk && chunk->shadowScale == scale) return chunk;
         return nullptr;
     }
+
+private:
+    void applyStyle1();
+    void applyStyle2();
+    void applyWaterOverlay();
+    void applyShadowMap(int scale);
+    void applyBevel(int scale);
 };
 } // namespace map_demo

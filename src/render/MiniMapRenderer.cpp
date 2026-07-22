@@ -7,7 +7,7 @@
 #include "data/pos/RegionPos.h"
 #include "data/pos/WorldPos.h"
 #include "mod/MapDemo.h"
-#include "state/render/RegionRenderer.h"
+#include "state/render/RendererManager.h"
 
 
 #include <imgui.h>
@@ -174,13 +174,13 @@ void MiniMapRenderer::render() {
     // 请求异步烘焙本帧涉及的所有 region
     // auto requestBake = [&](const RegionPos& pos, const std::shared_ptr<RegionCacheData>& data) {
     //     if (!data || !data->isBakedDirty()) return;
-    //     RegionRenderer::getInstance().requestBake(data, pos, pos.dimId);
+    //     RendererManager::getInstance().requestBake(data, pos, pos.dimId);
     // };
 
     // 绘制地形
     if (cfg.terrain.enable) {
         auto& mapCacheManager = MapCacheManager::getInstance();
-        auto& regionRenderer  = RegionRenderer::getInstance();
+        auto& rendererManager = RendererManager::getInstance();
 
         int dimId = state.dimensionId();
 
@@ -208,7 +208,7 @@ void MiniMapRenderer::render() {
 
                 if (!region) continue;
 
-                if (region->tickBakedDirty()) regionRenderer.requestBake(region, regionPos, dimId);
+                if (region->tickBakedDirty()) rendererManager.requestBake(region, regionPos);
 
                 auto minChunkPos = RegionChunkPos(0, 0);
                 if (regionPosX == minRegionPos.x) minChunkPos.x = minRegionChunkPos.x;
@@ -306,9 +306,7 @@ void MiniMapRenderer::render() {
     float cosY   = std::cos(yawRad);
     float sinY   = std::sin(yawRad);
 
-    auto rotate = [&](float x, float z) -> ImVec2 {
-        return ImVec2(cx + (x * cosY - z * sinY), cy + (x * sinY + z * cosY));
-    };
+    auto rotate = [&](float x, float z) { return ImVec2(cx + (x * cosY - z * sinY), cy + (x * sinY + z * cosY)); };
 
     ImU32 arrowOutline = toImCol32(mmc.playerArrowOutlineColor);
     ImU32 arrowFill    = toImCol32(mmc.playerArrowFillColor);

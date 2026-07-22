@@ -1,4 +1,4 @@
-#include "RegionRenderer.h"
+#include "RegionShadowRenderer.h"
 
 #include "config/Config.h"
 #include "data/BlockColor.h"
@@ -8,13 +8,10 @@
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/WorldPos.h"
-#include "data/shadowRender/ShadowRenderData.h"
-#include "mod/MapDemo.h"
 
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <memory>
 #include <mutex>
@@ -23,8 +20,6 @@
 #include <vector>
 
 namespace map_demo {
-
-using Clock = std::chrono::high_resolution_clock;
 
 namespace {
 
@@ -57,139 +52,32 @@ inline BlockColor multiplyColor(BlockColor c, float factor) {
 
 } // namespace
 
-RegionRenderer& RegionRenderer::getInstance() {
-    static RegionRenderer instance;
-    return instance;
-}
-
-RegionRenderer::RegionRenderer() : worker_([this] { workerLoop(); }) {}
-
-RegionRenderer::~RegionRenderer() {
-    // During DLL unload the runtime may already be tearing down.
-    // Avoid any logger access or object recreation here.
-    safeStopWorker();
-}
-
-void RegionRenderer::safeStopWorker() {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        stop_ = true;
-    }
-    cv_.notify_all();
-
-    if (worker_.joinable()) {
-        try {
-            worker_.join();
-        } catch (...) {
-            // If join throws (e.g. runtime already finalized during DLL unload),
-            // detach to avoid std::terminate from ~thread().
-            try {
-                worker_.detach();
-            } catch (...) {}
-        }
-    }
-}
-
-void RegionRenderer::shutdown() { safeStopWorker(); }
-
-void RegionRenderer::clearQueueAndWait() {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        stop_ = true;
-        while (!queue_.empty()) {
-            queue_.pop();
-        }
-    }
-    cv_.notify_all();
-
-    if (worker_.joinable()) {
-        try {
-            worker_.join();
-        } catch (...) {
-            try {
-                worker_.detach();
-            } catch (...) {}
-        }
-    }
-
-    // restart worker for continued use after world switch
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        stop_ = false;
-    }
-    worker_ = std::thread([this] { workerLoop(); });
-}
-
-void RegionRenderer::requestBake(const std::shared_ptr<RegionCacheData>& data, const RegionPos& pos, int dim) {
-    if (!data) return;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!data->isBakedDirty()) return;
-        queue_.push(BakeTask{data, dim, pos});
-    }
-    cv_.notify_one();
-}
-
-void RegionRenderer::workerLoop() {
-    while (true) {
-        BakeTask task;
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
-            if (stop_ && queue_.empty()) return;
-            task = queue_.front();
-            queue_.pop();
-        }
-
-        auto data = task.data.lock();
-        if (!data) continue;
-
-        baking_.store(true, std::memory_order_release);
-        auto t0 = Clock::now();
-        snapshotAndBake(data, task.pos, task.dim);
-        auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
-        baking_.store(false, std::memory_order_release);
-
-        static int s_workerLog = 0;
-        if ((++s_workerLog % 10) == 0 || us > 50000) {
-            MapDemo::getInstance().getSelf().getLogger().debug(
-                "RegionRenderer::worker bake region=({},{}), dim={}, time={}us",
-                task.pos.x,
-                task.pos.z,
-                task.dim,
-                us
-            );
-        }
-    }
-}
-
-void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& data, const RegionPos& pos, int /*dim*/) {
+void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
     if (!data) return;
 
     // Snapshot raw data under lock, then bake offline without holding the lock
-    ShadowRenderData shadow(pos);
     if (!data->takeBakedDirty()) return;
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             if (!chunkData || !chunkData->loadChunkBaseData) continue;
             std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
-            shadow.handlingRegion[regionChunkZ][regionChunkX] = std::make_shared<ShadowRenderChunkData>(*chunkData);
+            handlingRegion[regionChunkZ][regionChunkX] = std::make_shared<ShadowRenderChunkData>(*chunkData);
         }
     }
 
     auto& cfg = config::getConfig().terrain.shadow;
-    if (cfg.transparentWater) applyWaterOverlay(shadow);
+    if (cfg.transparentWater) applyWaterOverlay();
 
     if (cfg.renderStyle == 1) {
-        applyStyle1(shadow);
+        applyStyle1();
     } else if (cfg.renderStyle == 2) {
-        applyStyle2(shadow);
+        applyStyle2();
     }
 
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
-            auto shadowChunkData = shadow.handlingRegion[regionChunkZ][regionChunkX];
+            auto shadowChunkData = handlingRegion[regionChunkZ][regionChunkX];
             if (!shadowChunkData) continue;
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
@@ -207,23 +95,23 @@ void RegionRenderer::snapshotAndBake(const std::shared_ptr<RegionCacheData>& dat
 }
 
 // Style 1: simple heightmap gradient shadow, light from northwest
-void RegionRenderer::applyStyle1(ShadowRenderData& shadow) {
+void RegionShadowRenderer::applyStyle1() {
     auto& cfg   = config::getConfig().terrain.shadow;
     int   level = cfg.shadowLevel;
     if (level <= 0) level = 100;
 
-    int dimId = shadow.handlingRegionPos.dimId;
+    int dimId = handlingRegionPos.dimId;
 
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
-        auto westChunk = shadow.getChunk(ChunkPosWithDim(-1, regionChunkZ, dimId));
+        auto westChunk = getChunk(ChunkPosWithDim(-1, regionChunkZ, dimId));
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
-            // if (!shadow.hasData(x, z)) continue;
-            auto shadowChunkData = shadow.handlingRegion[regionChunkZ][regionChunkX];
+            // if (!hasData(x, z)) continue;
+            auto shadowChunkData = handlingRegion[regionChunkZ][regionChunkX];
             if (!shadowChunkData) {
                 westChunk = shadowChunkData;
                 continue;
             }
-            auto northChunk = shadow.getChunk(ChunkPosWithDim(regionChunkX, regionChunkZ - 1, dimId));
+            auto northChunk = getChunk(ChunkPosWithDim(regionChunkX, regionChunkZ - 1, dimId));
             for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
                 for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
                     auto& blockInfo = shadowChunkData->blocksData[chunkWorldZ][chunkWorldX];
@@ -260,19 +148,19 @@ void RegionRenderer::applyStyle1(ShadowRenderData& shadow) {
     }
 }
 
-void RegionRenderer::applyWaterOverlay(ShadowRenderData& /*shadow*/) {
+void RegionShadowRenderer::applyWaterOverlay() {
     // for (int z = 0; z < ShadowRegion::SIZE; ++z) {
     //     for (int x = 0; x < ShadowRegion::SIZE; ++x) {
-    //         const auto& info = shadow.getInfo(x, z);
+    //         const auto& info = getInfo(x, z);
     //         if (info.waterDepth == 0) continue;
 
     //         float opacity = std::min(0.15f * static_cast<float>(info.waterDepth), 0.85f);
-    //         shadow.setPixel(x, z, blendColors(shadow.getPixel(x, z), info.waterSurfaceColor, opacity));
+    //         setPixel(x, z, blendColors(getPixel(x, z), info.waterSurfaceColor, opacity));
     //     }
     // }
 }
 
-void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
+void RegionShadowRenderer::applyShadowMap(int scale) {
     auto& cfg = config::getConfig().terrain.shadow;
 
     constexpr float kShadowDarkness = 0.52f;
@@ -292,7 +180,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
     const float sdz       = sunZ / sun2dLen;
     const float dzPerStep = sunY / sun2dLen;
 
-    int dimId = shadow.handlingRegionPos.dimId;
+    int dimId = handlingRegionPos.dimId;
 
     int maxY = 0;
     if (!dimId) maxY = 320;
@@ -302,19 +190,19 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
     if (sunX <= 0) {
         if (sunZ <= 0) {
             for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
-                auto westChunk = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ, dimId}, scale);
+                auto westChunk = getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ, dimId}, scale);
                 auto northWestChunk =
-                    shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ - 1, dimId}, scale);
+                    getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ - 1, dimId}, scale);
                 for (int chunkX = 0; chunkX < 16; chunkX++) {
-                    auto chunk = shadow.handlingRegion[chunkZ][chunkX];
+                    auto chunk = handlingRegion[chunkZ][chunkX];
                     if (!chunk) {
                         westChunk = chunk;
                         northWestChunk =
-                            shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX, chunkZ - 1, dimId}, scale);
+                            getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX, chunkZ - 1, dimId}, scale);
                         continue;
                     }
                     auto northChunk =
-                        shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX, chunkZ - 1, dimId}, scale);
+                        getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX, chunkZ - 1, dimId}, scale);
                     for (int blockZ = 0; blockZ < 16; blockZ++) {
                         const BlockDataBase* westBlock = nullptr;
                         if (westChunk) westBlock = &westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ});
@@ -371,7 +259,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
                                             lastOffsetPos.z = sz;
                                             int currentHeight =
                                                 h + static_cast<int>(static_cast<float>(s) * dzPerStep + 0.01f);
-                                            if (shadow.getHeight(lastOffsetPos) > currentHeight) {
+                                            if (getHeight(lastOffsetPos) > currentHeight) {
                                                 handlingBlockData.shadowOriginData[scaleZ][scaleX] = kShadowDarkness;
                                                 break;
                                             } else if (currentHeight > maxY) break;
@@ -394,14 +282,14 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
     } else {
         for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
             for (int chunkX = 0; chunkX < 16; chunkX++) {
-                auto chunk = shadow.handlingRegion[chunkZ][chunkX];
+                auto chunk = handlingRegion[chunkZ][chunkX];
                 if (!chunk) continue;
                 for (int blockZ = 0; blockZ < 16; blockZ++) {
                     for (int blockX = 0; blockX < 16; blockX++) {
                         auto& shadowOriginData = chunk->blocksData[blockZ][blockX].shadowOriginData;
                         shadowOriginData.assign(scale, std::vector<float>(scale, 0.0f));
                         auto& handlingBlockData =
-                            shadow.handlingRegion[chunkZ][chunkX]->getBlockData(ChunkWorldPos(blockX, blockZ));
+                            handlingRegion[chunkZ][chunkX]->getBlockData(ChunkWorldPos(blockX, blockZ));
                         int h = handlingBlockData.height;
                         for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                             for (int scaleX = 0; scaleX < scale; scaleX++) {
@@ -418,7 +306,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
                                         lastOffsetPos.z = sz;
                                         int currentHeight =
                                             h + static_cast<int>(static_cast<float>(s) * dzPerStep + 0.01f);
-                                        if (shadow.getHeight(lastOffsetPos) > currentHeight) {
+                                        if (getHeight(lastOffsetPos) > currentHeight) {
                                             handlingBlockData.shadowOriginData[scaleZ][scaleX] = kShadowDarkness;
                                             break;
                                         } else if (currentHeight > maxY) break;
@@ -460,10 +348,10 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
         };
 
         for (int chunkZ = -1; chunkZ <= 16; chunkZ++) {
-            westChunk     = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ, dimId}, scale);
-            handlingChunk = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{0, chunkZ, dimId}, scale);
+            westChunk     = getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, chunkZ, dimId}, scale);
+            handlingChunk = getChunkWithEffectiveShadowData(ChunkPosWithDim{0, chunkZ, dimId}, scale);
             for (int chunkX = 0; chunkX < 16; chunkX++) {
-                eastChunk = shadow.getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX + 1, chunkZ, dimId}, scale);
+                eastChunk = getChunkWithEffectiveShadowData(ChunkPosWithDim{chunkX + 1, chunkZ, dimId}, scale);
                 std::vector<std::vector<float>>* handlingChunkShadowData = nullptr;
                 if (chunkZ == -1) handlingChunkShadowData = &northShadowData[chunkX];
                 else if (chunkZ == 16) handlingChunkShadowData = &southShadowData[chunkX];
@@ -519,7 +407,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
             for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
                 if (chunkZ < 15) southChunkShadowData = &shadowTempData[chunkZ + 1][chunkX];
                 else southChunkShadowData = &southShadowData[chunkX];
-                auto handlingChunk = shadow.handlingRegion[chunkZ][chunkX];
+                auto handlingChunk = handlingRegion[chunkZ][chunkX];
                 if (!handlingChunk) continue;
                 // for (int sZ = 0; sZ < 16 * scale; sZ++) {
                 //     for (int sX = 0; sX < 16 * scale; sX++) {
@@ -557,7 +445,7 @@ void RegionRenderer::applyShadowMap(ShadowRenderData& shadow, int scale) {
     } else {
         for (int chunkX = 0; chunkX < 16; chunkX++) {
             for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
-                auto handlingChunk = shadow.handlingRegion[chunkZ][chunkX];
+                auto handlingChunk = handlingRegion[chunkZ][chunkX];
                 if (!handlingChunk) continue;
                 for (int blockZ = 0; blockZ < 16; blockZ++) {
                     for (int blockX = 0; blockX < 16; blockX++) {
@@ -646,7 +534,7 @@ std::array<float, 81> buildBevelTable(int scale) {
     return table;
 }
 
-void RegionRenderer::applyBevel(ShadowRenderData& shadow, int scale) {
+void RegionShadowRenderer::applyBevel(int scale) {
     // 静态缓存：表 + 上次使用的scale
     static std::array<float, 81> cachedTable;
     static int                   cachedScale = -1;
@@ -657,7 +545,7 @@ void RegionRenderer::applyBevel(ShadowRenderData& shadow, int scale) {
         cachedScale = scale;
     }
 
-    int dimId = shadow.handlingRegionPos.dimId;
+    int dimId = handlingRegionPos.dimId;
 
     int  h      = 0;
     auto getRel = [&h](int neigh) {
@@ -667,16 +555,16 @@ void RegionRenderer::applyBevel(ShadowRenderData& shadow, int scale) {
     };
 
     for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
-        auto westChunk = shadow.getChunk(ChunkPosWithDim{-1, chunkZ, dimId});
+        auto westChunk = getChunk(ChunkPosWithDim{-1, chunkZ, dimId});
         for (int chunkX = 0; chunkX < 16; chunkX++) {
-            auto handlingChunk = shadow.handlingRegion[chunkZ][chunkX];
+            auto handlingChunk = handlingRegion[chunkZ][chunkX];
             if (!handlingChunk) {
                 westChunk = handlingChunk;
                 continue;
             }
-            auto eastChunk  = shadow.getChunk(ChunkPosWithDim{chunkX + 1, chunkZ, dimId});
-            auto northChunk = shadow.getChunk(ChunkPosWithDim{chunkX, chunkZ - 1, dimId});
-            auto southChunk = shadow.getChunk(ChunkPosWithDim{chunkX, chunkZ + 1, dimId});
+            auto eastChunk  = getChunk(ChunkPosWithDim{chunkX + 1, chunkZ, dimId});
+            auto northChunk = getChunk(ChunkPosWithDim{chunkX, chunkZ - 1, dimId});
+            auto southChunk = getChunk(ChunkPosWithDim{chunkX, chunkZ + 1, dimId});
             for (int blockZ = 0; blockZ < 16; blockZ++) {
                 h      = handlingChunk->getBlockBaseData(ChunkWorldPos{0, blockZ}).solidHeight;
                 int hw = westChunk ? westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ}).solidHeight : h;
@@ -716,12 +604,12 @@ void RegionRenderer::applyBevel(ShadowRenderData& shadow, int scale) {
     }
 }
 
-void RegionRenderer::applyStyle2(ShadowRenderData& shadow) {
+void RegionShadowRenderer::applyStyle2() {
     auto& cfg   = config::getConfig().terrain.shadow;
     int   scale = std::clamp(cfg.renderScale, 1, 16);
 
-    applyShadowMap(shadow, scale);
-    applyBevel(shadow, scale);
+    applyShadowMap(scale);
+    applyBevel(scale);
 }
 
 void traceRay(

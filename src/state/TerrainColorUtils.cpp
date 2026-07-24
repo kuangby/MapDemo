@@ -179,7 +179,7 @@ BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, i
         if (height < minY || height > maxY) height = maxY;
 
         // 向上遍历找到最顶部的非空气方块
-        for (int y = height + 1; y <= maxY; ++y) {
+        for (int y = height; y <= maxY; ++y) {
             std::string name = getBlockName(y);
 
             if (name == "minecraft:air" || name == "air") {

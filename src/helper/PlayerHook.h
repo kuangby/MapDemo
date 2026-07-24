@@ -14,6 +14,7 @@
 #include <mc/world/level/dimension/Dimension.h>
 
 
+#include "BlockChangeListener.h"
 #include "config/Config.h"
 #include "data/cache/MapCacheManager.h"
 #include "mod/MapDemo.h"
@@ -39,9 +40,12 @@ LL_TYPE_INSTANCE_HOOK(
 
     static bool s_wasInWorld = false;
 
+    static int dimId = -1;
+
     if (isPlayerInWorld) {
-        const auto& pos = player->getPosition();
-        float       yaw = player->getRotation().y;
+        const auto& pos         = player->getPosition();
+        float       yaw         = player->getRotation().y;
+        int         playerDimId = player->getDimensionId();
 
         if (!s_wasInWorld) {
             MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player entered world");
@@ -60,6 +64,15 @@ LL_TYPE_INSTANCE_HOOK(
                 bool cacheOk = MapCacheManager::getInstance().initializeDiskCache(cachePath);
                 MapDemo::getInstance().getSelf().getLogger().debug("Terrain disk cache init result: {}", cacheOk);
             }
+        } else if (playerDimId != dimId) {
+            dimId = playerDimId;
+            MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player change dimension");
+            MapState::getInstance().resetSmoothCamera(pos.x, pos.z, yaw);
+            RendererManager::getInstance().clearQueueAndWait();
+            MapCacheManager::getInstance().clearAll();
+            TerrainScanner::getInstance().clearState();
+
+            player->getDimensionBlockSource().addListener(BlockChangeListener::getInstance());
         }
 
         MapState::getInstance().updatePlayer(pos.x, pos.y, pos.z, yaw, static_cast<int>(player->getDimensionId()));

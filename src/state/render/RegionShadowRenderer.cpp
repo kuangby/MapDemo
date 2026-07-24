@@ -378,10 +378,10 @@ void RegionShadowRenderer::applyShadowMap(int scale) {
                         float sum           = 0.0f;
                         for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                             for (int scaleX = 0; scaleX < scale; scaleX++) {
-                                for (int index = 16 * blockZ + scaleZ - pcfRadius;
-                                     index <= 16 * blockZ + scaleZ + pcfRadius;
+                                for (int index = blockZ * scale + scaleZ - pcfRadius;
+                                     index <= blockZ * scale + scaleZ + pcfRadius;
                                      index++) {
-                                    sum += getShadowData2(16 * blockX + scaleX, index);
+                                    sum += getShadowData2(blockX * scale + scaleX, index);
                                 }
                             }
                         }

@@ -21,6 +21,8 @@ public:
 
     std::array<std::array<BlockCacheData, 16>, 16> blocksData; // need to save
 
+    bool bakedDirty{false};
+
     mutable std::shared_mutex mutex_; // protects all fields above
 
 public:
@@ -41,5 +43,22 @@ public:
     [[nodiscard]] BlockCacheData&       getBlockCacheData(const ChunkWorldPos& pos);
 
     [[nodiscard]] const BlockDataBase& getBlockBaseData(const ChunkWorldPos& pos) const override;
+
+    void markBakedDirty() {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        bakedDirty = true;
+    }
+
+    bool takeBakedDirty() {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        if (!bakedDirty) return false;
+        bakedDirty = false;
+        return true;
+    }
+
+    [[nodiscard]] bool isBakedDirty() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return bakedDirty;
+    }
 };
 } // namespace map_demo

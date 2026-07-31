@@ -1,6 +1,10 @@
 #include "RendererManager.h"
 
+#include "config/Config.h"
+#include "data/cache/MapCacheManager.h"
 #include "mod/MapDemo.h"
+#include "state/MapState.h"
+#include "state/render/ChunkShadowRenderer.h"
 #include "state/render/RegionShadowRenderer.h"
 
 
@@ -51,9 +55,13 @@ void RendererManager::clearQueueAndWait() {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = true;
-        while (!queue_.empty()) {
-            queue_.pop();
+        while (!regionQueue_.empty()) {
+            regionQueue_.pop();
         }
+        while (!chunkQueue_.empty()) {
+            chunkQueue_.pop();
+        }
+        queuedChunks_.clear();
     }
     cv_.notify_all();
 
@@ -80,43 +88,138 @@ void RendererManager::requestBake(const std::shared_ptr<RegionCacheData>& data, 
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!data->isBakedDirty()) return;
-        queue_.push(BakeTask{data, pos});
+        regionQueue_.push(BakeTask{data, pos});
+    }
+    cv_.notify_one();
+}
+
+void RendererManager::requestChunkBake(const std::shared_ptr<ChunkCacheData>& data, const ChunkPosWithDim& pos) {
+    if (!data) return;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!data->isBakedDirty()) return;
+        if (!queuedChunks_.insert(pos).second) return;
+        chunkQueue_.push(ChunkBakeTask{data, pos});
     }
     cv_.notify_one();
 }
 
 void RendererManager::workerLoop() {
     while (true) {
-        BakeTask task;
+        BakeTask      regionTask;
+        ChunkBakeTask chunkTask;
+        bool          isChunkTask = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
-            if (stop_ && queue_.empty()) return;
-            task = queue_.front();
-            queue_.pop();
+            cv_.wait(lock, [this] { return stop_ || !regionQueue_.empty() || !chunkQueue_.empty(); });
+            if (stop_ && regionQueue_.empty() && chunkQueue_.empty()) return;
+            if (!regionQueue_.empty()) {
+                regionTask = regionQueue_.front();
+                regionQueue_.pop();
+            } else {
+                chunkTask = chunkQueue_.front();
+                chunkQueue_.pop();
+                queuedChunks_.erase(chunkTask.pos);
+                isChunkTask = true;
+            }
         }
-
-        auto data = task.data.lock();
-        if (!data) continue;
 
         baking_.store(true, std::memory_order_release);
-        auto                 t0 = Clock::now();
-        RegionShadowRenderer renderer(task.pos);
-        renderer.bake(data);
-        auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
-        baking_.store(false, std::memory_order_release);
+        auto t0 = Clock::now();
+        if (isChunkTask) {
+            auto data = chunkTask.data.lock();
+            if (!data) {
+                baking_.store(false, std::memory_order_release);
+                continue;
+            }
+            ChunkShadowRenderer renderer(chunkTask.pos);
+            renderer.bake(data);
+            data->takeBakedDirty();
+            if (auto region = MapCacheManager::getInstance().getRegion(RegionPos(chunkTask.pos))) {
+                region->markEverBaked();
+            }
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
+            baking_.store(false, std::memory_order_release);
 
-        static int s_workerLog = 0;
-        if ((++s_workerLog % 10) == 0 || us > 50000) {
-            MapDemo::getInstance().getSelf().getLogger().debug(
-                "RendererManager::worker bake region=({},{}), dim={}, time={}us",
-                task.pos.x,
-                task.pos.z,
-                task.pos.dimId,
-                us
-            );
+            static int s_workerChunkLog = 0;
+            if ((++s_workerChunkLog % 100) == 0 || us > 50000) {
+                MapDemo::getInstance().getSelf().getLogger().debug(
+                    "RendererManager::worker bake chunk=({},{}), dim={}, time={}us",
+                    chunkTask.pos.x,
+                    chunkTask.pos.z,
+                    chunkTask.pos.dimId,
+                    us
+                );
+            }
+        } else {
+            auto data = regionTask.data.lock();
+            if (!data) {
+                baking_.store(false, std::memory_order_release);
+                continue;
+            }
+            RegionShadowRenderer renderer(regionTask.pos);
+            renderer.bake(data);
+            if (auto region = MapCacheManager::getInstance().getRegion(regionTask.pos)) {
+                region->markEverBaked();
+            }
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
+            baking_.store(false, std::memory_order_release);
+
+            static int s_workerLog = 0;
+            if ((++s_workerLog % 10) == 0 || us > 50000) {
+                MapDemo::getInstance().getSelf().getLogger().debug(
+                    "RendererManager::worker bake region=({},{}), dim={}, time={}us",
+                    regionTask.pos.x,
+                    regionTask.pos.z,
+                    regionTask.pos.dimId,
+                    us
+                );
+            }
         }
     }
+}
+
+void notifyShadowConfigChanged() {
+    auto& shadow = config::getConfig().terrain.shadow;
+
+    struct ShadowSnapshot {
+        int   renderStyle;
+        int   renderScale;
+        int   pcfRadius;
+        int   shadowLevel;
+        float lightAzimuth;
+        float lightZenith;
+        bool  transparentWater;
+
+        [[nodiscard]] bool operator==(const ShadowSnapshot&) const = default;
+    };
+
+    static ShadowSnapshot last{
+        shadow.renderStyle,
+        shadow.renderScale,
+        shadow.pcfRadius,
+        shadow.shadowLevel,
+        shadow.lightAzimuth,
+        shadow.lightZenith,
+        shadow.transparentWater
+    };
+
+    ShadowSnapshot current{
+        shadow.renderStyle,
+        shadow.renderScale,
+        shadow.pcfRadius,
+        shadow.shadowLevel,
+        shadow.lightAzimuth,
+        shadow.lightZenith,
+        shadow.transparentWater
+    };
+
+    if (current == last) return;
+    last = current;
+
+    auto& state = MapState::getInstance();
+    if (!state.hasPlayer()) return;
+    MapCacheManager::getInstance().markAllDirty(state.dimensionId());
 }
 
 } // namespace map_demo

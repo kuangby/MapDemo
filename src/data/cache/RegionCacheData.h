@@ -5,6 +5,7 @@
 #include "data/pos/RegionChunkPos.h"
 #include <memory>
 #include <shared_mutex>
+#include <vector>
 
 
 namespace map_demo {
@@ -15,6 +16,7 @@ private:
     bool                                                            bakedDirty{false};
     int                                                             delay{0};
     int                                                             maxDelay{0};
+    bool                                                            everBaked{false};
 
 public:
     std::shared_ptr<ChunkCacheData> getChunkData(const RegionChunkPos& pos) const {
@@ -74,6 +76,26 @@ public:
     [[nodiscard]] bool isBakedDirty() const {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         return bakedDirty;
+    }
+
+    void collectDirtyChunks(std::vector<RegionChunkPos>& out) const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        for (int z = 0; z < 16; ++z) {
+            for (int x = 0; x < 16; ++x) {
+                auto& chunk = chunksData[z][x];
+                if (chunk && chunk->isBakedDirty()) out.emplace_back(x, z);
+            }
+        }
+    }
+
+    void markEverBaked() {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        everBaked = true;
+    }
+
+    [[nodiscard]] bool hasEverBaked() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return everBaked;
     }
 };
 } // namespace map_demo

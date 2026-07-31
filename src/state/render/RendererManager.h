@@ -1,6 +1,8 @@
 #pragma once
 
+#include "data/cache/ChunkCacheData.h"
 #include "data/cache/RegionCacheData.h"
+#include "data/pos/ChunkPosWithDim.h"
 #include "data/pos/RegionPos.h"
 
 
@@ -10,6 +12,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <unordered_set>
 
 namespace map_demo {
 
@@ -31,6 +34,9 @@ public:
     // 请求异步烘焙一个 region；未变脏则不会提交
     void requestBake(const std::shared_ptr<RegionCacheData>& data, const RegionPos& pos);
 
+    // 请求异步烘焙一个 chunk；未变脏或已在队列中则不会提交
+    void requestChunkBake(const std::shared_ptr<ChunkCacheData>& data, const ChunkPosWithDim& pos);
+
 private:
     RendererManager();
 
@@ -41,12 +47,22 @@ private:
         RegionPos                      pos;
     };
 
-    std::thread             worker_;
-    std::mutex              mutex_;
-    std::condition_variable cv_;
-    std::queue<BakeTask>    queue_;
-    std::atomic_bool        baking_{false};
-    bool                    stop_{false};
+    struct ChunkBakeTask {
+        std::weak_ptr<ChunkCacheData> data;
+        ChunkPosWithDim               pos;
+    };
+
+    std::thread                        worker_;
+    std::mutex                         mutex_;
+    std::condition_variable            cv_;
+    std::queue<BakeTask>               regionQueue_;
+    std::queue<ChunkBakeTask>          chunkQueue_;
+    std::unordered_set<ChunkPosWithDim> queuedChunks_;
+    std::atomic_bool                   baking_{false};
+    bool                               stop_{false};
 };
+
+// 阴影相关配置变化时调用；有变化则对当前维度全量 mark dirty 触发 rebake
+void notifyShadowConfigChanged();
 
 } // namespace map_demo

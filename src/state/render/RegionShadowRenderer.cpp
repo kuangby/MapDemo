@@ -370,11 +370,11 @@ void RegionShadowRenderer::applyShadowMap(int scale) {
             for (int chunkZ = 0; chunkZ < 16; chunkZ++) {
                 if (chunkZ < 15) southChunkShadowData = &shadowTempData[chunkZ + 1][chunkX];
                 else southChunkShadowData = &southShadowData[chunkX];
-                auto handlingChunk = handlingRegion[chunkZ][chunkX];
-                if (!handlingChunk) continue;
+                auto shadowChunk = handlingRegion[chunkZ][chunkX];
+                if (!shadowChunk) continue;
                 for (int blockZ = 0; blockZ < 16; blockZ++) {
                     for (int blockX = 0; blockX < 16; blockX++) {
-                        auto& handlingBlock = handlingChunk->blocksData[blockZ][blockX];
+                        auto& handlingBlock = shadowChunk->blocksData[blockZ][blockX];
                         float sum           = 0.0f;
                         for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                             for (int scaleX = 0; scaleX < scale; scaleX++) {

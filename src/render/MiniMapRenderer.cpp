@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include "data/cache/MapCacheManager.h"
 #include "state/ChunkManager.h"
@@ -208,7 +209,19 @@ void MiniMapRenderer::render() {
 
                 if (!region) continue;
 
-                if (region->tickBakedDirty()) rendererManager.requestBake(region, regionPos);
+                if (region->tickBakedDirty()) {
+                    thread_local std::vector<RegionChunkPos> dirty;
+                    dirty.clear();
+                    region->collectDirtyChunks(dirty);
+                    for (auto& rc : dirty) {
+                        auto chunk = region->getChunkData(rc);
+                        if (chunk)
+                            rendererManager.requestChunkBake(
+                                chunk,
+                                ChunkPosWithDim{regionPos.x * 16 + rc.x, regionPos.z * 16 + rc.z, dimId}
+                            );
+                    }
+                }
 
                 auto minChunkPos = RegionChunkPos(0, 0);
                 if (regionPosX == minRegionPos.x) minChunkPos.x = minRegionChunkPos.x;

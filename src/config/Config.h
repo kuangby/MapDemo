@@ -96,7 +96,7 @@ struct TerrainConfig {
     bool enable = true;
 
     // 同一个 chunk 两次扫描之间的最小帧间隔
-    int rescanIntervalFrames = 120;
+    int rescanIntervalFrames = 9000;
 
     // 是否启用磁盘缓存
     bool enableDiskCache = true;

@@ -244,7 +244,10 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
         }
         chunkData->lastScanFrame = totalFrames_;
     }
-    if (changed) regionData->markBakedDirty();
+    if (changed) {
+        chunkData->markBakedDirty();
+        regionData->markBakedDirty();
+    }
 
     auto       us         = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
     static int s_chunkLog = 0;

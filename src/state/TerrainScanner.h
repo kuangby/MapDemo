@@ -53,6 +53,9 @@ public:
     // 获取当前累计帧数
     [[nodiscard]] std::uint64_t totalFrames() const { return totalFrames_; }
 
+    // 扫描单个 chunk 并写入缓存（供周期调度与方块变化触发的即时重扫使用）
+    void scanChunk(BlockSource* region, const ChunkPosWithDim& key) const;
+
 private:
     TerrainScanner() = default;
 
@@ -61,9 +64,6 @@ private:
 
     // 根据当前玩家 chunk 更新可见集合
     void updateVisibleSet(const ChunkPosWithDim& playerChunkPos, int scanRadiusChunks);
-
-    // 扫描单个 chunk 并写入缓存
-    void scanChunk(BlockSource* region, const ChunkPosWithDim& key) const;
 
     // 序列化/反序列化单个 chunk 的颜色数据
     // std::string serializeChunk(const RegionData* data, int chunkLocalX, int chunkLocalZ);

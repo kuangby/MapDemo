@@ -120,6 +120,25 @@ void MapCacheManager::evictRegionsOutsideRadius(ChunkPosWithDim centerChunkPos, 
     }
 }
 
+void MapCacheManager::markAllDirty(int dimId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& [regionPos, region] : regions_) {
+        if (regionPos.dimId != dimId || !region) continue;
+        for (int z = 0; z < 16; ++z) {
+            for (int x = 0; x < 16; ++x) {
+                auto chunk = region->getChunkData(RegionChunkPos{x, z});
+                if (!chunk) continue;
+                {
+                    std::shared_lock<std::shared_mutex> chunkLock(chunk->mutex_);
+                    if (!chunk->loadChunkBaseData) continue;
+                }
+                chunk->markBakedDirty();
+            }
+        }
+        region->markBakedDirty();
+    }
+}
+
 bool MapCacheManager::initializeDiskCache(const std::filesystem::path& path) {
     try {
         diskCache_ = std::make_unique<ll::data::KeyValueDB>(path);

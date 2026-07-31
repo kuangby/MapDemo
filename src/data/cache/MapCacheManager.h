@@ -46,13 +46,18 @@ public:
     bool initializeDiskCache(const std::filesystem::path& path);
 
     // 磁盘缓存读写
-    void saveToDisk(const RegionPos& regionPos, std::shared_ptr<RegionCacheData> data) {};
-    bool loadFromDisk(const RegionPos& regionPos, std::shared_ptr<RegionCacheData> data) { return false; };
-    static std::string makeDiskKey(const RegionPos& regionPos) { return ""; };
-    std::string        serializeRegionData(std::shared_ptr<RegionCacheData> data) { return ""; };
-    bool deserializeRegionData(std::shared_ptr<RegionCacheData> data, const std::string& blob) { return false; };
+    void saveToDisk(const RegionPos& /*regionPos*/, std::shared_ptr<RegionCacheData> /*data*/) {};
+    bool loadFromDisk(const RegionPos& /*regionPos*/, std::shared_ptr<RegionCacheData> /*data*/) { return false; };
+    static std::string makeDiskKey(const RegionPos& /*regionPos*/) { return ""; };
+    std::string        serializeRegionData(std::shared_ptr<RegionCacheData> /*data*/) { return ""; };
+    bool deserializeRegionData(std::shared_ptr<RegionCacheData> /*data*/, const std::string& /*blob*/) {
+        return false;
+    };
 
     void evictRegionsOutsideRadius(ChunkPosWithDim centerChunkPos, int radiusChunks);
+
+    // 标记指定维度所有已扫描 chunk 及其 region 为 baked dirty（配置变化时全量 rebake）
+    void markAllDirty(int dimId);
 
 private:
     MapCacheManager() = default;

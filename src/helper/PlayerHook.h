@@ -42,6 +42,8 @@ LL_TYPE_INSTANCE_HOOK(
 
     static int dimId = -1;
 
+    static BlockSource* s_listenerSource = nullptr;
+
     if (isPlayerInWorld) {
         const auto& pos         = player->getPosition();
         float       yaw         = player->getRotation().y;
@@ -53,7 +55,12 @@ LL_TYPE_INSTANCE_HOOK(
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
+            BlockChangeListener::clearPendingChunks();
             s_wasInWorld = true;
+            dimId        = playerDimId;
+
+            s_listenerSource = &player->getDimensionBlockSource();
+            s_listenerSource->addListener(BlockChangeListener::getInstance());
 
             if (config::getConfig().terrain.enableDiskCache) {
                 auto worldPath = MapDemo::getInstance().getSelf().getWorldDataDir();
@@ -71,8 +78,11 @@ LL_TYPE_INSTANCE_HOOK(
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
+            BlockChangeListener::clearPendingChunks();
 
-            player->getDimensionBlockSource().addListener(BlockChangeListener::getInstance());
+            if (s_listenerSource) s_listenerSource->removeListener(BlockChangeListener::getInstance());
+            s_listenerSource = &player->getDimensionBlockSource();
+            s_listenerSource->addListener(BlockChangeListener::getInstance());
         }
 
         MapState::getInstance().updatePlayer(pos.x, pos.y, pos.z, yaw, static_cast<int>(player->getDimensionId()));
@@ -96,12 +106,22 @@ LL_TYPE_INSTANCE_HOOK(
     } else {
         if (s_wasInWorld) {
             MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player left world");
+            if (s_listenerSource) {
+                s_listenerSource->removeListener(BlockChangeListener::getInstance());
+                s_listenerSource = nullptr;
+            }
+            BlockChangeListener::clearPendingChunks();
             MapState::getInstance().clearPlayer();
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
             s_wasInWorld = false;
         }
+    }
+
+    if (isPlayerInWorld) {
+        notifyShadowConfigChanged();
+        BlockChangeListener::drainPendingChunks();
     }
 
     return result;

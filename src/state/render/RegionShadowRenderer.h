@@ -16,6 +16,7 @@
 #include <array>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 
 namespace map_demo {
@@ -76,4 +77,8 @@ private:
     void applyShadowMap(int scale);
     void applyBevel(int scale);
 };
+
+// 计算方块高度变化后阴影可能受影响的 chunk 列表（含自身 chunk）；角度为弧度制
+std::vector<ChunkPosWithDim>
+getAffectedChunk(int oriHeight, int height, WorldPos pos, float azimuth_rad, float zenith_rad);
 } // namespace map_demo

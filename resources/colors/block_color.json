@@ -1,12 +1,4 @@
 {
-  "minecraft:client_request_placeholder_block": {
-    "black": [
-      0,
-      0,
-      0,
-      255
-    ]
-  },
   "minecraft:acacia_button": {
     "planks_acacia": [
       168,

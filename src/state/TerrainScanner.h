@@ -54,7 +54,8 @@ public:
     [[nodiscard]] std::uint64_t totalFrames() const { return totalFrames_; }
 
     // 扫描单个 chunk 并写入缓存（供周期调度与方块变化触发的即时重扫使用）
-    void scanChunk(BlockSource* region, const ChunkPosWithDim& key) const;
+    // 返回 false 表示 chunk 未加载或为客户端占位符，本次未扫描
+    bool scanChunk(BlockSource* region, const ChunkPosWithDim& key) const;
 
 private:
     TerrainScanner() = default;

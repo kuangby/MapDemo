@@ -31,7 +31,7 @@ public:
     // 清空队列并等待当前后台烘焙完成（世界切换前调用）
     void clearQueueAndWait();
 
-    // 请求异步烘焙一个 region；未变脏则不会提交
+    // 请求异步烘焙一个 region；已在队列中则不会重复提交
     void requestBake(const std::shared_ptr<RegionCacheData>& data, const RegionPos& pos);
 
     // 请求异步烘焙一个 chunk；未变脏或已在队列中则不会提交
@@ -52,11 +52,12 @@ private:
         ChunkPosWithDim               pos;
     };
 
-    std::thread                        worker_;
-    std::mutex                         mutex_;
-    std::condition_variable            cv_;
-    std::queue<BakeTask>               regionQueue_;
-    std::queue<ChunkBakeTask>          chunkQueue_;
+    std::thread                         worker_;
+    std::mutex                          mutex_;
+    std::condition_variable             cv_;
+    std::queue<BakeTask>                regionQueue_;
+    std::queue<ChunkBakeTask>           chunkQueue_;
+    std::unordered_set<RegionPos>       queuedRegions_;
     std::unordered_set<ChunkPosWithDim> queuedChunks_;
     std::atomic_bool                   baking_{false};
     bool                               stop_{false};

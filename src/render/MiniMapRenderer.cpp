@@ -172,12 +172,6 @@ void MiniMapRenderer::render() {
         return ImVec2(cx + (worldX - smoothX) * scale, cy + (worldZ - smoothZ) * scale);
     };
 
-    // 请求异步烘焙本帧涉及的所有 region
-    // auto requestBake = [&](const RegionPos& pos, const std::shared_ptr<RegionCacheData>& data) {
-    //     if (!data || !data->isBakedDirty()) return;
-    //     RendererManager::getInstance().requestBake(data, pos, pos.dimId);
-    // };
-
     // 绘制地形
     if (cfg.terrain.enable) {
         auto& mapCacheManager = MapCacheManager::getInstance();
@@ -213,14 +207,23 @@ void MiniMapRenderer::render() {
                     thread_local std::vector<RegionChunkPos> dirty;
                     dirty.clear();
                     region->collectDirtyChunks(dirty);
-                    for (auto& rc : dirty) {
-                        auto chunk = region->getChunkData(rc);
-                        if (chunk)
-                            rendererManager.requestChunkBake(
-                                chunk,
-                                ChunkPosWithDim{regionPos.x * 16 + rc.x, regionPos.z * 16 + rc.z, dimId}
-                            );
+
+                    // 脏 chunk 数量超过阈值时走 region 级 bake，否则按 chunk 级逐个 bake
+                    if (static_cast<int>(dirty.size()) > cfg.terrain.regionBakeThreshold) {
+                        rendererManager.requestBake(region, regionPos);
+                    } else {
+                        for (auto& rc : dirty) {
+                            auto chunk = region->getChunkData(rc);
+                            if (chunk)
+                                rendererManager.requestChunkBake(
+                                    chunk,
+                                    ChunkPosWithDim{regionPos.x * 16 + rc.x, regionPos.z * 16 + rc.z, dimId}
+                                );
+                        }
                     }
+
+                    // 消费 region 防抖标记，重新武装防抖状态机
+                    region->takeBakedDirty();
                 }
 
                 auto minChunkPos = RegionChunkPos(0, 0);

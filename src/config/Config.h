@@ -98,6 +98,9 @@ struct TerrainConfig {
     // 同一个 chunk 两次扫描之间的最小帧间隔
     int rescanIntervalFrames = 9000;
 
+    // region 内脏 chunk 数量超过该值时，改用 region 级 bake（region 共 256 chunk）
+    int regionBakeThreshold = 64;
+
     // 是否启用磁盘缓存
     bool enableDiskCache = true;
 

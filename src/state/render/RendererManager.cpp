@@ -61,6 +61,7 @@ void RendererManager::clearQueueAndWait() {
         while (!chunkQueue_.empty()) {
             chunkQueue_.pop();
         }
+        queuedRegions_.clear();
         queuedChunks_.clear();
     }
     cv_.notify_all();
@@ -87,7 +88,7 @@ void RendererManager::requestBake(const std::shared_ptr<RegionCacheData>& data, 
     if (!data) return;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!data->isBakedDirty()) return;
+        if (!queuedRegions_.insert(pos).second) return;
         regionQueue_.push(BakeTask{data, pos});
     }
     cv_.notify_one();
@@ -116,6 +117,7 @@ void RendererManager::workerLoop() {
             if (!regionQueue_.empty()) {
                 regionTask = regionQueue_.front();
                 regionQueue_.pop();
+                queuedRegions_.erase(regionTask.pos);
             } else {
                 chunkTask = chunkQueue_.front();
                 chunkQueue_.pop();

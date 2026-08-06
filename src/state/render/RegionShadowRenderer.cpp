@@ -27,7 +27,6 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
     if (!data) return;
 
     // Snapshot raw data under lock, then bake offline without holding the lock
-    if (!data->takeBakedDirty()) return;
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
@@ -61,6 +60,8 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
                 }
             }
             chunkData->shadowScale = shadowChunkData->shadowScale;
+            // region bake 已覆盖该 chunk，清除其 chunk 级脏标记（已持有 unique_lock，直接赋值）
+            chunkData->bakedDirty = false;
         }
     }
 }

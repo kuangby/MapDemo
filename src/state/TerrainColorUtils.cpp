@@ -33,6 +33,8 @@ BlockColor getBiomeFallbackColor(const std::string& biomeName) {
 
 // 获取带生物群系混合的方块颜色
 BlockColor getBlockColorWithBiome(const std::string& name, const std::string& biomeName) {
+    // 占位符方块：按透明处理，避免品红 fallback 写入缓存
+    if (name == "minecraft:client_request_placeholder_block") return BlockColor{0, 0, 0, 0};
     auto color = BlockColorManager::getInstance().getBlockColor(name);
     if (color.a == 0) {
         return BlockColor{173, 8, 172, 255}; // 未知方块：品红色

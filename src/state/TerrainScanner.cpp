@@ -10,6 +10,8 @@
 #include "state/TerrainColorUtils.h"
 
 
+#include "mc/world/level/chunk/ChunkSource.h"
+#include "mc/world/level/chunk/SubChunk.h"
 #include "mc/world/level/dimension/Dimension.h"
 #include <mc/world/level/BlockSource.h>
 #include <mc/world/level/ChunkBlockPos.h>
@@ -27,6 +29,33 @@ namespace map_demo {
 using Clock = std::chrono::high_resolution_clock;
 
 namespace {
+
+// 未加载 chunk 的重试间隔（帧），远小于 rescanIntervalFrames，保证 chunk 加载后很快被扫描
+constexpr std::uint64_t kUnloadedRetryFrames = 20;
+
+// 客户端占位符 chunk：数据包到达前子区块调色板内含 client_request_placeholder_block，
+// 直接检查全部子区块调色板（不依赖高度表，部分填充也可检出）
+bool isTerrainPlaceholder(LevelChunk* chunk) {
+    for (auto& subChunk : chunk->mSubChunks.get()) {
+        for (int layer = 0; layer < 2; ++layer) {
+            auto& storage = subChunk.mBlocks[layer];
+            if (!storage) continue;
+            bool found = storage->hasAnyElementMatchingFilterInPalette([](Block const& b) {
+                return b.getTypeName() == "minecraft:client_request_placeholder_block";
+            });
+            if (found) {
+                static int s_placeholderLog = 0;
+                if ((++s_placeholderLog % 60) == 1) {
+                    MapDemo::getInstance().getSelf().getLogger().debug(
+                        "TerrainScanner: placeholder chunk detected (client_request_placeholder_block in palette)"
+                    );
+                }
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 struct ChunkRect {
     int xMin;
@@ -178,10 +207,13 @@ void TerrainScanner::updateVisibleSet(const ChunkPosWithDim& playerChunkPos, int
     }
 }
 
-void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) const {
-    auto        t0    = Clock::now();
-    LevelChunk* chunk = region->getChunk(key.x, key.z);
-    if (!isChunkLoaded(chunk)) return;
+bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) const {
+    auto t0 = Clock::now();
+    auto chunk = region->getChunk(key.x, key.z);
+    if (!isChunkLoaded(chunk)) return false;
+
+    // 占位符 chunk（数据未到达，info_update 填充）：不写缓存，等待短延迟重试
+    if (isTerrainPlaceholder(chunk)) return false;
 
     // 根据维度获取 cameraHeight
     int cameraHeight;
@@ -257,6 +289,7 @@ void TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
             .getLogger()
             .debug("TerrainScanner::scanChunk chunk=({},{}), dim={}, time={}us", key.x, key.z, key.dimId, us);
     }
+    return true;
 }
 
 // void TerrainScanner::saveChunkToDisk(
@@ -445,8 +478,8 @@ void TerrainScanner::update(BlockSource* region, const ChunkPosWithDim& playerCh
         // 检查 chunk 是否已加载
         LevelChunk* chunk = region->getChunk(key.x, key.z);
         if (!isChunkLoaded(chunk)) {
-            // 未加载：放到下一轮扫描，不占用本帧处理上限
-            ScanEntry newEntry{totalFrames_ + static_cast<std::uint64_t>(cfg.rescanIntervalFrames), key};
+            // 未加载：短延迟后重试，不占用本帧处理上限
+            ScanEntry newEntry{totalFrames_ + kUnloadedRetryFrames, key};
             auto [newIt, inserted] = scanQueue_.insert(newEntry);
             if (inserted) {
                 scanMap_[key] = newIt;
@@ -467,8 +500,24 @@ void TerrainScanner::update(BlockSource* region, const ChunkPosWithDim& playerCh
         }
 
         if (needScan) {
-            scanChunk(region, key);
-            ++processed;
+            if (scanChunk(region, key)) {
+                ++processed;
+                // 扫描成功：按正常重扫间隔重新入队
+                ScanEntry newEntry{totalFrames_ + static_cast<std::uint64_t>(cfg.rescanIntervalFrames), key};
+                auto [newIt, inserted] = scanQueue_.insert(newEntry);
+                if (inserted) {
+                    scanMap_[key] = newIt;
+                }
+            } else {
+                // 扫描失败（如 placeholder 数据未到达）：短延迟后重试
+                ScanEntry newEntry{totalFrames_ + kUnloadedRetryFrames, key};
+                auto [newIt, inserted] = scanQueue_.insert(newEntry);
+                if (inserted) {
+                    scanMap_[key] = newIt;
+                }
+                ++unloaded;
+            }
+            continue;
         }
 
         // 重新入队，安排下一次扫描

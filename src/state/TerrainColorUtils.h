@@ -36,6 +36,7 @@ struct TerrainPixelInfo {
 };
 
 // 基于 cameraHeight 的方块颜色获取，同时返回高度信息
-BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight);
+// outHitPlaceholder：走查过程中遇到 client_request_placeholder_block 时置 true
+BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight, bool& outHitPlaceholder);
 
 } // namespace map_demo

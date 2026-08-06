@@ -48,7 +48,8 @@ public:
         int  oriHeight    = 0;
         if (hasOriHeight) oriHeight = chunk->getHeight(ChunkWorldPos(worldPos));
 
-        TerrainScanner::getInstance().scanChunk(&source, chunkPos);
+        bool hitPlaceholder = false;
+        TerrainScanner::getInstance().scanChunk(&source, chunkPos, hitPlaceholder);
 
         if (!hasOriHeight) return;
 

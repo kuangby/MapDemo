@@ -141,7 +141,7 @@ BlockColor processWater(LevelChunk* chunk, int cx, int cz, int waterSurfaceY, in
 }
 
 // 基于 cameraHeight 的方块颜色获取，同时返回高度信息
-BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight) {
+BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight, bool& outHitPlaceholder) {
     int minY  = chunk->mMin->y;
     int maxY  = chunk->mMax->y - 1;
     int dimId = chunk->mDimension.getDimensionId();
@@ -163,7 +163,9 @@ BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, i
             ChunkLocalHeight{static_cast<short>(y - minY)},
             static_cast<uchar>(pos.z)
         );
-        return chunk->getBlock(localPos).getTypeName();
+        std::string name = chunk->getBlock(localPos).getTypeName();
+        if (name == "minecraft:client_request_placeholder_block") outHitPlaceholder = true;
+        return name;
     };
 
     auto blockColorAt = [&](int y) -> BlockColor {

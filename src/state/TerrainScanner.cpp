@@ -33,30 +33,6 @@ namespace {
 // 未加载 chunk 的重试间隔（帧），远小于 rescanIntervalFrames，保证 chunk 加载后很快被扫描
 constexpr std::uint64_t kUnloadedRetryFrames = 20;
 
-// 客户端占位符 chunk：数据包到达前子区块调色板内含 client_request_placeholder_block，
-// 直接检查全部子区块调色板（不依赖高度表，部分填充也可检出）
-bool isTerrainPlaceholder(LevelChunk* chunk) {
-    for (auto& subChunk : chunk->mSubChunks.get()) {
-        for (int layer = 0; layer < 2; ++layer) {
-            auto& storage = subChunk.mBlocks[layer];
-            if (!storage) continue;
-            bool found = storage->hasAnyElementMatchingFilterInPalette([](Block const& b) {
-                return b.getTypeName() == "minecraft:client_request_placeholder_block";
-            });
-            if (found) {
-                static int s_placeholderLog = 0;
-                if ((++s_placeholderLog % 60) == 1) {
-                    MapDemo::getInstance().getSelf().getLogger().debug(
-                        "TerrainScanner: placeholder chunk detected (client_request_placeholder_block in palette)"
-                    );
-                }
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 struct ChunkRect {
     int xMin;
     int xMax;
@@ -207,13 +183,12 @@ void TerrainScanner::updateVisibleSet(const ChunkPosWithDim& playerChunkPos, int
     }
 }
 
-bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) const {
+bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, bool& outHitPlaceholder) const {
     auto t0 = Clock::now();
     auto chunk = region->getChunk(key.x, key.z);
     if (!isChunkLoaded(chunk)) return false;
 
-    // 占位符 chunk（数据未到达，info_update 填充）：不写缓存，等待短延迟重试
-    if (isTerrainPlaceholder(chunk)) return false;
+    outHitPlaceholder = false;
 
     // 根据维度获取 cameraHeight
     int cameraHeight;
@@ -242,7 +217,8 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
         std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
         for (int chunkWorldPosZ = 0; chunkWorldPosZ < 16; ++chunkWorldPosZ) {
             for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
-                auto color = getTerrainPixelAtCameraHeight(chunk, {chunkWorldPosX, chunkWorldPosZ}, cameraHeight);
+                auto color =
+                    getTerrainPixelAtCameraHeight(chunk, {chunkWorldPosX, chunkWorldPosZ}, cameraHeight, outHitPlaceholder);
 
                 int idx = chunkWorldPosZ * 16 + chunkWorldPosX;
 
@@ -274,7 +250,10 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key) 
                 }
             }
         }
-        chunkData->lastScanFrame = totalFrames_;
+        // 命中占位符时不更新 lastScanFrame，保证短延迟重试不被 needScan 检查跳过
+        if (!outHitPlaceholder) {
+            chunkData->lastScanFrame = totalFrames_;
+        }
     }
     if (changed) {
         chunkData->markBakedDirty();
@@ -500,16 +479,19 @@ void TerrainScanner::update(BlockSource* region, const ChunkPosWithDim& playerCh
         }
 
         if (needScan) {
-            if (scanChunk(region, key)) {
+            bool hitPlaceholder = false;
+            if (scanChunk(region, key, hitPlaceholder)) {
                 ++processed;
-                // 扫描成功：按正常重扫间隔重新入队
-                ScanEntry newEntry{totalFrames_ + static_cast<std::uint64_t>(cfg.rescanIntervalFrames), key};
+                // 扫描成功：命中占位符的按短延迟重扫，否则按正常重扫间隔
+                std::uint64_t interval = hitPlaceholder ? kUnloadedRetryFrames
+                                                        : static_cast<std::uint64_t>(cfg.rescanIntervalFrames);
+                ScanEntry newEntry{totalFrames_ + interval, key};
                 auto [newIt, inserted] = scanQueue_.insert(newEntry);
                 if (inserted) {
                     scanMap_[key] = newIt;
                 }
             } else {
-                // 扫描失败（如 placeholder 数据未到达）：短延迟后重试
+                // 扫描失败：短延迟后重试
                 ScanEntry newEntry{totalFrames_ + kUnloadedRetryFrames, key};
                 auto [newIt, inserted] = scanQueue_.insert(newEntry);
                 if (inserted) {

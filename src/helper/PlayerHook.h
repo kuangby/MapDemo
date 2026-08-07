@@ -55,7 +55,6 @@ LL_TYPE_INSTANCE_HOOK(
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
-            BlockChangeListener::clearPendingChunks();
             s_wasInWorld = true;
             dimId        = playerDimId;
 
@@ -78,7 +77,6 @@ LL_TYPE_INSTANCE_HOOK(
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
             TerrainScanner::getInstance().clearState();
-            BlockChangeListener::clearPendingChunks();
 
             if (s_listenerSource) s_listenerSource->removeListener(BlockChangeListener::getInstance());
             s_listenerSource = &player->getDimensionBlockSource();
@@ -110,7 +108,6 @@ LL_TYPE_INSTANCE_HOOK(
                 s_listenerSource->removeListener(BlockChangeListener::getInstance());
                 s_listenerSource = nullptr;
             }
-            BlockChangeListener::clearPendingChunks();
             MapState::getInstance().clearPlayer();
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
@@ -121,7 +118,6 @@ LL_TYPE_INSTANCE_HOOK(
 
     if (isPlayerInWorld) {
         notifyShadowConfigChanged();
-        BlockChangeListener::drainPendingChunks();
     }
 
     return result;

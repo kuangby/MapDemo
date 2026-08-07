@@ -44,32 +44,8 @@ public:
         auto chunkPos = ChunkPosWithDim(worldPos);
         auto chunk    = mapCacheManager.getChunk(chunkPos);
 
-        bool hasOriHeight = chunk && chunk->loadChunkBaseData;
-        int  oriHeight    = 0;
-        if (hasOriHeight) oriHeight = chunk->getHeight(ChunkWorldPos(worldPos));
-
-        bool hitPlaceholder = false;
-        TerrainScanner::getInstance().scanChunk(&source, chunkPos, hitPlaceholder);
-
-        if (!hasOriHeight) return;
-
-        chunk = mapCacheManager.getChunk(chunkPos);
-        if (!chunk) return;
-        int newHeight = chunk->getHeight(ChunkWorldPos(worldPos));
-        if (newHeight == oriHeight) return;
-
-        const float deg2rad  = 3.1415926535f / 180.0f;
-        auto&       shadow   = config::getConfig().terrain.shadow;
-        auto        affected = getAffectedChunk(
-            oriHeight,
-            newHeight,
-            worldPos,
-            shadow.lightAzimuth * deg2rad,
-            shadow.lightZenith * deg2rad
-        );
-        for (auto& affectedPos : affected) {
-            pendingChunks_.insert(affectedPos);
-        }
+        bool unuse;
+        TerrainScanner::getInstance().scanChunk(&source, chunkPos, unuse);
     }
 
     // tick 末统一处理本 tick 收集到的受影响 chunk

@@ -7,6 +7,7 @@
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/RegionPos.h"
 #include "mod/MapDemo.h"
+#include "state/ShadowAffectedChunk.h"
 #include "state/TerrainColorUtils.h"
 
 
@@ -23,6 +24,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
+#include <unordered_set>
 
 namespace map_demo {
 
@@ -184,7 +187,7 @@ void TerrainScanner::updateVisibleSet(const ChunkPosWithDim& playerChunkPos, int
 }
 
 bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, bool& outHitPlaceholder) const {
-    auto t0 = Clock::now();
+    auto t0    = Clock::now();
     auto chunk = region->getChunk(key.x, key.z);
     if (!isChunkLoaded(chunk)) return false;
 
@@ -212,15 +215,32 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
     int minY = region->mMinHeight;
 
-    bool changed = false;
+    bool changed       = false;
+    bool heightChanged = false;
+
+    int chunkMinHeight = std::numeric_limits<int>::max();
+    int chunkMaxHeight = std::numeric_limits<int>::min();
+    int oldMinHeight   = 0;
+    int oldMaxHeight   = 0;
+
     {
         std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
+        oldMinHeight = chunkData->minHeight;
+        oldMaxHeight = chunkData->maxHeight;
         for (int chunkWorldPosZ = 0; chunkWorldPosZ < 16; ++chunkWorldPosZ) {
             for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
-                auto color =
-                    getTerrainPixelAtCameraHeight(chunk, {chunkWorldPosX, chunkWorldPosZ}, cameraHeight, outHitPlaceholder);
+                auto color = getTerrainPixelAtCameraHeight(
+                    chunk,
+                    {chunkWorldPosX, chunkWorldPosZ},
+                    cameraHeight,
+                    outHitPlaceholder
+                );
 
                 int idx = chunkWorldPosZ * 16 + chunkWorldPosX;
+
+                int heightVal = chunk->mHeightmap.get()[idx].mVal + minY;
+                if (heightVal < chunkMinHeight) chunkMinHeight = heightVal;
+                if (heightVal > chunkMaxHeight) chunkMaxHeight = heightVal;
 
                 auto& currentBlockData = chunkData->blocksData[chunkWorldPosZ][chunkWorldPosX];
 
@@ -228,7 +248,7 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
                     chunkData->loadChunkBaseData = true;
                     currentBlockData.color       = color;
-                    currentBlockData.height      = static_cast<std::int16_t>(chunk->mHeightmap.get()[idx].mVal + minY);
+                    currentBlockData.height      = static_cast<std::int16_t>(heightVal);
                     currentBlockData.solidHeight =
                         static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
 
@@ -238,9 +258,10 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                         currentBlockData.color = color;
                         changed                = true;
                     }
-                    if (currentBlockData.height != chunk->mHeightmap.get()[idx].mVal + minY) {
-                        currentBlockData.height = static_cast<std::int16_t>(chunk->mHeightmap.get()[idx].mVal + minY);
+                    if (currentBlockData.height != heightVal) {
+                        currentBlockData.height = static_cast<std::int16_t>(heightVal);
                         changed                 = true;
+                        heightChanged           = true;
                     }
                     if (currentBlockData.solidHeight != chunk->mRenderHeightmap.get()[idx].mVal + minY) {
                         currentBlockData.solidHeight =
@@ -250,6 +271,8 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                 }
             }
         }
+        chunkData->minHeight = chunkMinHeight;
+        chunkData->maxHeight = chunkMaxHeight;
         // 命中占位符时不更新 lastScanFrame，保证短延迟重试不被 needScan 检查跳过
         if (!outHitPlaceholder) {
             chunkData->lastScanFrame = totalFrames_;
@@ -258,6 +281,27 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
     if (changed) {
         chunkData->markBakedDirty();
         regionData->markBakedDirty();
+    }
+
+    // 高度变化会影响下游 chunk 的阴影：以整个 chunk 为单位计算受影响 chunk 并标脏
+    if (heightChanged) {
+        const float deg2rad     = 3.1415926535f / 180.0f;
+        auto&       shadowCfg   = config::getConfig().terrain.shadow;
+        float       azimuth_rad = shadowCfg.lightAzimuth * deg2rad;
+        float       zenith_rad  = shadowCfg.lightZenith * deg2rad;
+
+        auto affected = getAffectedChunksForRect(
+            key.x * 16,
+            key.z * 16,
+            key.x * 16 + 16,
+            key.z * 16 + 16,
+            std::max(oldMaxHeight, chunkMaxHeight),
+            std::min(oldMinHeight, chunkMinHeight),
+            key.dimId,
+            azimuth_rad,
+            zenith_rad
+        );
+        markAffectedChunksDirty(std::unordered_set<ChunkPosWithDim>(affected.begin(), affected.end()));
     }
 
     auto       us         = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
@@ -483,8 +527,8 @@ void TerrainScanner::update(BlockSource* region, const ChunkPosWithDim& playerCh
             if (scanChunk(region, key, hitPlaceholder)) {
                 ++processed;
                 // 扫描成功：命中占位符的按短延迟重扫，否则按正常重扫间隔
-                std::uint64_t interval = hitPlaceholder ? kUnloadedRetryFrames
-                                                        : static_cast<std::uint64_t>(cfg.rescanIntervalFrames);
+                std::uint64_t interval =
+                    hitPlaceholder ? kUnloadedRetryFrames : static_cast<std::uint64_t>(cfg.rescanIntervalFrames);
                 ScanEntry newEntry{totalFrames_ + interval, key};
                 auto [newIt, inserted] = scanQueue_.insert(newEntry);
                 if (inserted) {

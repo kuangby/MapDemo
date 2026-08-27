@@ -2,6 +2,7 @@
 
 #include "config/Config.h"
 #include "data/cache/MapCacheManager.h"
+#include "helper/ShadowDebugLogger.h"
 #include "mod/MapDemo.h"
 #include "state/MapState.h"
 #include "state/render/ChunkShadowRenderer.h"
@@ -98,9 +99,24 @@ void RendererManager::requestChunkBake(const std::shared_ptr<ChunkCacheData>& da
     if (!data) return;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!data->isBakedDirty()) return;
+        if (!data->isBakedDirty()) {
+            // 脏标记丢失：调度方认为该 chunk 脏，但标记已被消费，阴影可能残留
+            ShadowDebugLogger::getInstance().log(
+                "[queue] chunk=({},{}) dim={} -> SKIP_NOT_DIRTY (dirty flag lost)",
+                pos.x,
+                pos.z,
+                pos.dimId
+            );
+            return;
+        }
         if (!queuedChunks_.insert(pos).second) return;
         chunkQueue_.push(ChunkBakeTask{data, pos});
+        ShadowDebugLogger::getInstance().log(
+            "[queue] chunk=({},{}) dim={} -> QUEUED",
+            pos.x,
+            pos.z,
+            pos.dimId
+        );
     }
     cv_.notify_one();
 }
@@ -135,13 +151,33 @@ void RendererManager::workerLoop() {
                 continue;
             }
             ChunkShadowRenderer renderer(chunkTask.pos);
+            auto                epoch = data->getBakedDirtyEpoch();
             renderer.bake(data);
-            data->takeBakedDirty();
+            // bake 期间被重新标脏（epoch 变化）时保留脏标记，并重新武装 region 防抖以触发重烘
+            if (!data->takeBakedDirtyIfEpoch(epoch)) {
+                if (auto region = MapCacheManager::getInstance().getRegion(RegionPos(chunkTask.pos))) {
+                    region->markBakedDirty();
+                }
+                ShadowDebugLogger::getInstance().log(
+                    "[bake] chunk=({},{}) dim={} -> DIRTY_KEPT (marked during chunk bake)",
+                    chunkTask.pos.x,
+                    chunkTask.pos.z,
+                    chunkTask.pos.dimId
+                );
+            }
             if (auto region = MapCacheManager::getInstance().getRegion(RegionPos(chunkTask.pos))) {
                 region->markEverBaked();
             }
             auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
             baking_.store(false, std::memory_order_release);
+
+            ShadowDebugLogger::getInstance().log(
+                "[bake] chunk=({},{}) dim={} time={}us",
+                chunkTask.pos.x,
+                chunkTask.pos.z,
+                chunkTask.pos.dimId,
+                us
+            );
 
             static int s_workerChunkLog = 0;
             if ((++s_workerChunkLog % 100) == 0 || us > 50000) {
@@ -166,6 +202,14 @@ void RendererManager::workerLoop() {
             }
             auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
             baking_.store(false, std::memory_order_release);
+
+            ShadowDebugLogger::getInstance().log(
+                "[bake] region=({},{}) dim={} time={}us",
+                regionTask.pos.x,
+                regionTask.pos.z,
+                regionTask.pos.dimId,
+                us
+            );
 
             static int s_workerLog = 0;
             if ((++s_workerLog % 10) == 0 || us > 50000) {

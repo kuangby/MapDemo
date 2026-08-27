@@ -10,6 +10,7 @@
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/WorldPos.h"
+#include "helper/ShadowDebugLogger.h"
 
 
 #include <algorithm>
@@ -26,13 +27,16 @@ namespace map_demo {
 void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
     if (!data) return;
 
+    std::uint32_t dirtyEpochSnapshot[16][16]{};
+
     // Snapshot raw data under lock, then bake offline without holding the lock
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             if (!chunkData || !chunkData->loadChunkBaseData) continue;
             std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
-            handlingRegion[regionChunkZ][regionChunkX] = std::make_shared<ShadowRenderChunkData>(*chunkData);
+            handlingRegion[regionChunkZ][regionChunkX]   = std::make_shared<ShadowRenderChunkData>(*chunkData);
+            dirtyEpochSnapshot[regionChunkZ][regionChunkX] = chunkData->bakedDirtyEpoch;
         }
     }
 
@@ -45,6 +49,7 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
         applyStyle2();
     }
 
+    bool keptDirty = false;
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto shadowChunkData = handlingRegion[regionChunkZ][regionChunkX];
@@ -60,10 +65,26 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
                 }
             }
             chunkData->shadowScale = shadowChunkData->shadowScale;
-            // region bake 已覆盖该 chunk，清除其 chunk 级脏标记（已持有 unique_lock，直接赋值）
-            chunkData->bakedDirty = false;
+            // region bake 已覆盖该 chunk，清除其 chunk 级脏标记（已持有 unique_lock，直接赋值）；
+            // 但 bake 期间被重新标脏（epoch 变化）的 chunk 必须保留脏标记，否则阴影残留
+            if (chunkData->bakedDirtyEpoch == dirtyEpochSnapshot[regionChunkZ][regionChunkX]) {
+                chunkData->bakedDirty = false;
+            } else {
+                keptDirty = true;
+                ShadowDebugLogger::getInstance().log(
+                    "[bake] region=({},{}) dim={} chunk=({},{}) -> DIRTY_KEPT (marked during region bake)",
+                    handlingRegionPos.x,
+                    handlingRegionPos.z,
+                    handlingRegionPos.dimId,
+                    handlingRegionPos.x * 16 + regionChunkX,
+                    handlingRegionPos.z * 16 + regionChunkZ
+                );
+            }
         }
     }
+
+    // 有 chunk 在 bake 期间被重新标脏：重新武装 region 防抖，保证脏 chunk 会被重新调度
+    if (keptDirty) data->markBakedDirty();
 }
 
 // Style 1: simple heightmap gradient shadow, light from northwest

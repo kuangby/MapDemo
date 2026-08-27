@@ -6,6 +6,7 @@
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/RegionPos.h"
+#include "helper/ShadowDebugLogger.h"
 #include "mod/MapDemo.h"
 #include "state/ShadowAffectedChunk.h"
 #include "state/TerrainColorUtils.h"
@@ -289,6 +290,17 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
         auto&       shadowCfg   = config::getConfig().terrain.shadow;
         float       azimuth_rad = shadowCfg.lightAzimuth * deg2rad;
         float       zenith_rad  = shadowCfg.lightZenith * deg2rad;
+
+        ShadowDebugLogger::getInstance().log(
+            "[scanChunk] heightChanged chunk=({},{}) dim={} oldY=[{},{}] newY=[{},{}]",
+            key.x,
+            key.z,
+            key.dimId,
+            oldMinHeight,
+            oldMaxHeight,
+            chunkMinHeight,
+            chunkMaxHeight
+        );
 
         auto affected = getAffectedChunksForRect(
             key.x * 16,

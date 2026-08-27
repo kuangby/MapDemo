@@ -6,6 +6,7 @@
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/RegionPos.h"
 #include "data/pos/WorldPos.h"
+#include "helper/ShadowDebugLogger.h"
 #include "mod/MapDemo.h"
 #include "state/render/RendererManager.h"
 
@@ -210,8 +211,34 @@ void MiniMapRenderer::render() {
 
                     // 脏 chunk 数量超过阈值时走 region 级 bake，否则按 chunk 级逐个 bake
                     if (static_cast<int>(dirty.size()) > cfg.terrain.regionBakeThreshold) {
+                        ShadowDebugLogger::getInstance().log(
+                            "[schedule] region=({},{}) dim={} dirtyChunks={} -> REGION_BAKE",
+                            regionPos.x,
+                            regionPos.z,
+                            dimId,
+                            dirty.size()
+                        );
                         rendererManager.requestBake(region, regionPos);
                     } else {
+                        if (ShadowDebugLogger::getInstance().isEnabled()) {
+                            std::string list;
+                            for (auto& rc : dirty) {
+                                fmt::format_to(
+                                    std::back_inserter(list),
+                                    "({},{}) ",
+                                    regionPos.x * 16 + rc.x,
+                                    regionPos.z * 16 + rc.z
+                                );
+                            }
+                            ShadowDebugLogger::getInstance().log(
+                                "[schedule] region=({},{}) dim={} dirtyChunks={} -> CHUNK_BAKE: {}",
+                                regionPos.x,
+                                regionPos.z,
+                                dimId,
+                                dirty.size(),
+                                list
+                            );
+                        }
                         for (auto& rc : dirty) {
                             auto chunk = region->getChunkData(rc);
                             if (chunk)

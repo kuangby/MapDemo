@@ -3,6 +3,7 @@
 #include "data/cache/MapCacheManager.h"
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/RegionPos.h"
+#include "helper/ShadowDebugLogger.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,10 +29,13 @@ void traceRay(
 ) {
     auto& mapCacheManager = MapCacheManager::getInstance();
 
-    auto curX      = static_cast<float>(originX);
-    auto curZ      = static_cast<float>(originZ);
-    int  curChunkX = static_cast<int>(std::floor(curX / 16.0f));
-    int  curChunkZ = static_cast<int>(std::floor(curZ / 16.0f));
+    auto curX = static_cast<float>(originX);
+    auto curZ = static_cast<float>(originZ);
+    // 按方向做 epsilon 偏移计算初始 chunk：原点恰在边界且方向分量为负时，
+    // 射线立即进入相邻 chunk，避免 t=0 被钳制后步进卡死
+    const float eps = 1e-4f;
+    int curChunkX = static_cast<int>(std::floor((curX + (dirX >= 0.0f ? eps : -eps)) / 16.0f));
+    int curChunkZ = static_cast<int>(std::floor((curZ + (dirZ >= 0.0f ? eps : -eps)) / 16.0f));
 
     float dist = 0.0f;
 
@@ -68,6 +72,21 @@ void traceRay(
                 //    => 该 chunk 在新旧状态下都不在阴影中
                 if (static_cast<float>(higherHeight) - minDistance * tanZenith
                     < static_cast<float>(chunkData->minHeight)) {
+                    ShadowDebugLogger::getInstance().log(
+                        "[traceRay] origin=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
+                        " higher={} lower={} -> SKIP_LIT, ray terminated",
+                        originX,
+                        originZ,
+                        curChunkX,
+                        curChunkZ,
+                        pos.dimId,
+                        minDistance,
+                        maxDistance,
+                        chunkData->minHeight,
+                        chunkData->maxHeight,
+                        higherHeight,
+                        lowerHeight
+                    );
                     break;
                 }
 
@@ -75,9 +94,48 @@ void traceRay(
                 //    => 该 chunk 在新旧状态下都被完全阴影覆盖，状态无变化
                 if (static_cast<float>(lowerHeight) - maxDistance * tanZenith
                     >= static_cast<float>(chunkData->maxHeight)) {
+                    ShadowDebugLogger::getInstance().log(
+                        "[traceRay] origin=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
+                        " higher={} lower={} -> SKIP_FULL_SHADOW",
+                        originX,
+                        originZ,
+                        curChunkX,
+                        curChunkZ,
+                        pos.dimId,
+                        minDistance,
+                        maxDistance,
+                        chunkData->minHeight,
+                        chunkData->maxHeight,
+                        higherHeight,
+                        lowerHeight
+                    );
                     continue;
                 }
+                ShadowDebugLogger::getInstance().log(
+                    "[traceRay] origin=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
+                    " higher={} lower={} -> AFFECTED",
+                    originX,
+                    originZ,
+                    curChunkX,
+                    curChunkZ,
+                    pos.dimId,
+                    minDistance,
+                    maxDistance,
+                    chunkData->minHeight,
+                    chunkData->maxHeight,
+                    higherHeight,
+                    lowerHeight
+                );
                 out.emplace_back(chunk);
+            } else {
+                ShadowDebugLogger::getInstance().log(
+                    "[traceRay] origin=({},{}) chunk=({},{}) dim={} -> SKIP_UNSCANNED",
+                    originX,
+                    originZ,
+                    curChunkX,
+                    curChunkZ,
+                    pos.dimId
+                );
             }
         }
 
@@ -99,8 +157,9 @@ void traceRay(
         curZ += dirZ * stepDist;
         dist += stepDist;
 
-        if (std::abs(stepDist - tX) < 1e-4f) curChunkX += (dirX >= 0.0f) ? 1 : -1;
-        if (std::abs(stepDist - tZ) < 1e-4f) curChunkZ += (dirZ >= 0.0f) ? 1 : -1;
+        // 由实际坐标重算所在 chunk（沿用 epsilon 偏移），保证跨越边界后 chunk 坐标一致
+        curChunkX = static_cast<int>(std::floor((curX + (dirX >= 0.0f ? eps : -eps)) / 16.0f));
+        curChunkZ = static_cast<int>(std::floor((curZ + (dirZ >= 0.0f ? eps : -eps)) / 16.0f));
     }
 }
 
@@ -118,6 +177,21 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
     float zenith_rad
 ) {
     float tanZenith = std::tan(zenith_rad);
+
+    ShadowDebugLogger::getInstance().log(
+        "[getAffectedChunksForRect] rect=[({},{})-({},{})] dim={} higher={} lower={} azimuth={:.2f} zenith={:.2f}"
+        " tanZenith={:.3f}",
+        x0,
+        z0,
+        x1,
+        z1,
+        dimId,
+        higherHeight,
+        lowerHeight,
+        azimuth_rad,
+        zenith_rad,
+        tanZenith
+    );
 
     std::vector<ChunkPosWithDim>        res;
     std::unordered_set<ChunkPosWithDim> visited;
@@ -163,49 +237,107 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
 
     std::pair<int, int> downstreamCorners[2];
     int                 downstreamCount = 0;
+    std::pair<int, int> tracedOrigins[2];
+    int                 tracedCount = 0;
     for (auto& [cx, cz] : corners) {
         float dot = static_cast<float>(cx) * dirX + static_cast<float>(cz) * dirZ;
         if (dot >= maxDot - 1e-4f) {
-            downstreamCorners[downstreamCount++] = {cx, cz};
+            // 下游角点夹取到矩形内，供终点 chunk 判定使用
+            downstreamCorners[downstreamCount++] = {
+                std::clamp(cx, x0, x1 - 1),
+                std::clamp(cz, z0, z1 - 1)
+            };
             continue;
         }
-        // 非下游角点作为射线原点
-        traceRay(res, visited, pos, cx, cz, dirX, dirZ, maxDist, higherHeight, lowerHeight, tanZenith);
+        // 非下游角点作为射线原点；排他边界角点夹取到矩形内，重复原点只追踪一次
+        int ox = std::clamp(cx, x0, x1 - 1);
+        int oz = std::clamp(cz, z0, z1 - 1);
+        bool dup = false;
+        for (int i = 0; i < tracedCount; ++i) {
+            if (tracedOrigins[i].first == ox && tracedOrigins[i].second == oz) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup) continue;
+        tracedOrigins[tracedCount++] = {ox, oz};
+        traceRay(res, visited, pos, ox, oz, dirX, dirZ, maxDist, higherHeight, lowerHeight, tanZenith);
     }
 
     // 阴影终点方块（扫掠区域最前角点）所在 chunk 可能不被任何一条射线覆盖，单独判定
     for (int i = 0; i < downstreamCount; ++i) {
-        int endX = static_cast<int>(static_cast<float>(downstreamCorners[i].first) + maxDist * dirX);
-        int endZ = static_cast<int>(static_cast<float>(downstreamCorners[i].second) + maxDist * dirZ);
+        int endX = static_cast<int>(
+            std::floor(static_cast<float>(downstreamCorners[i].first) + maxDist * dirX)
+        );
+        int endZ = static_cast<int>(
+            std::floor(static_cast<float>(downstreamCorners[i].second) + maxDist * dirZ)
+        );
 
         auto farChunk = ChunkPosWithDim{
             WorldPos{endX, endZ, dimId}
         };
-        if (visited.contains(farChunk)) continue;
+        if (!visited.emplace(farChunk).second) continue;
 
         int chunkMinX = farChunk.x * 16;
         int chunkMaxX = farChunk.x * 16 + 16;
         int chunkMinZ = farChunk.z * 16;
         int chunkMaxZ = farChunk.z * 16 + 16;
 
-        // 终点方块到该 chunk 的最近点
-        int  closestX = std::clamp(endX, chunkMinX, chunkMaxX);
-        int  closestZ = std::clamp(endZ, chunkMinZ, chunkMaxZ);
-        auto minDistance =
-            static_cast<float>(std::sqrt((closestX - endX) * (closestX - endX) + (closestZ - endZ) * (closestZ - endZ))
-            );
+        // 终点方块到该 chunk 的最近点；阴影高度按距射线原点（下游角点）计算，需加上 maxDist
+        int   closestX    = std::clamp(endX, chunkMinX, chunkMaxX);
+        int   closestZ    = std::clamp(endZ, chunkMinZ, chunkMaxZ);
+        float minDistance = maxDist
+                          + static_cast<float>(std::sqrt(
+                                (closestX - endX) * (closestX - endX) + (closestZ - endZ) * (closestZ - endZ)
+                            ));
 
         // 终点方块到该 chunk 的最远角
-        int  farX        = std::abs(endX - chunkMinX) > std::abs(endX - chunkMaxX) ? chunkMinX : chunkMaxX;
-        int  farZ        = std::abs(endZ - chunkMinZ) > std::abs(endZ - chunkMaxZ) ? chunkMinZ : chunkMaxZ;
-        auto maxDistance = static_cast<float>(std::sqrt((farX - endX) * (farX - endX) + (farZ - endZ) * (farZ - endZ)));
+        int   farX        = std::abs(endX - chunkMinX) > std::abs(endX - chunkMaxX) ? chunkMinX : chunkMaxX;
+        int   farZ        = std::abs(endZ - chunkMinZ) > std::abs(endZ - chunkMaxZ) ? chunkMinZ : chunkMaxZ;
+        float maxDistance = maxDist
+                          + static_cast<float>(
+                                std::sqrt((farX - endX) * (farX - endX) + (farZ - endZ) * (farZ - endZ))
+                            );
 
         auto chunkData = MapCacheManager::getInstance().getChunk(farChunk);
-        if (chunkData && chunkData->loadChunkBaseData
-            && static_cast<float>(higherHeight) - minDistance * tanZenith > static_cast<float>(chunkData->minHeight)
-            && static_cast<float>(lowerHeight) - maxDistance * tanZenith < static_cast<float>(chunkData->maxHeight)) {
+        bool affected  = chunkData && chunkData->loadChunkBaseData
+                    && static_cast<float>(higherHeight) - minDistance * tanZenith
+                           > static_cast<float>(chunkData->minHeight)
+                    && static_cast<float>(lowerHeight) - maxDistance * tanZenith
+                           < static_cast<float>(chunkData->maxHeight);
+        ShadowDebugLogger::getInstance().log(
+            "[farChunk] end=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
+            " higher={} lower={} scanned={} -> {}",
+            endX,
+            endZ,
+            farChunk.x,
+            farChunk.z,
+            dimId,
+            minDistance,
+            maxDistance,
+            chunkData ? chunkData->minHeight : 0,
+            chunkData ? chunkData->maxHeight : 0,
+            higherHeight,
+            lowerHeight,
+            chunkData && chunkData->loadChunkBaseData,
+            affected ? "AFFECTED" : "SKIPPED"
+        );
+        if (affected) {
             res.emplace_back(farChunk);
         }
+    }
+
+    if (ShadowDebugLogger::getInstance().isEnabled()) {
+        std::string list;
+        for (auto& c : res) {
+            fmt::format_to(std::back_inserter(list), "({},{}) ", c.x, c.z);
+        }
+        ShadowDebugLogger::getInstance().log(
+            "[getAffectedChunksForRect] dim={} result {} chunks: {}",
+            dimId,
+            res.size(),
+            list
+        );
     }
 
     return res;
@@ -230,12 +362,34 @@ void markAffectedChunksDirty(const std::unordered_set<ChunkPosWithDim>& chunks) 
     auto& mapCacheManager = MapCacheManager::getInstance();
     for (auto& pos : chunks) {
         auto region = mapCacheManager.getRegion(RegionPos(pos));
-        if (!region) continue;
+        if (!region) {
+            ShadowDebugLogger::getInstance().log(
+                "[markDirty] chunk=({},{}) dim={} -> SKIP_NO_REGION",
+                pos.x,
+                pos.z,
+                pos.dimId
+            );
+            continue;
+        }
         auto chunk = region->getChunkData(RegionChunkPos(pos));
         // 跳过未加载数据的 chunk：首次扫描时会全量 bake，无需标脏
-        if (!chunk || !chunk->loadChunkBaseData) continue;
+        if (!chunk || !chunk->loadChunkBaseData) {
+            ShadowDebugLogger::getInstance().log(
+                "[markDirty] chunk=({},{}) dim={} -> SKIP_UNLOADED",
+                pos.x,
+                pos.z,
+                pos.dimId
+            );
+            continue;
+        }
         chunk->markBakedDirty();
         region->markBakedDirty();
+        ShadowDebugLogger::getInstance().log(
+            "[markDirty] chunk=({},{}) dim={} -> MARKED",
+            pos.x,
+            pos.z,
+            pos.dimId
+        );
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include "config/Config.h"
 #include "helper/HookRegistry.h"
+#include "helper/ShadowDebugLogger.h"
 #include "ll/api/mod/RegisterHelper.h"
 #include "state/BlockColorManager.h"
 #include "state/TerrainScanner.h"
@@ -29,6 +30,8 @@ bool MapDemo::load() {
     bool loaded = BlockColorManager::getInstance().loadFromFiles(blockColorPath, biomeColorPath);
     getSelf().getLogger().debug("Block colors load result: {}", loaded);
 
+    ShadowDebugLogger::getInstance().setEnabled(cfg.terrain.shadow.debugLog);
+
     registerAllHooks();
     getSelf().getLogger().debug("Hooks registered");
     return true;
@@ -44,6 +47,7 @@ bool MapDemo::disable() {
     unregisterAllHooks();
     RendererManager::getInstance().shutdown();
     TerrainScanner::getInstance().shutdown();
+    ShadowDebugLogger::getInstance().shutdown();
     getSelf().getLogger().debug("Hooks unregistered");
     return true;
 }

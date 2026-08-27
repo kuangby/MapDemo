@@ -134,6 +134,9 @@ struct TerrainConfig {
         // 固定光源方向（方位角 315° 西北，天顶角 60°）
         float lightAzimuth = 315.0f;
         float lightZenith  = 60.0f;
+
+        // 是否输出阴影标脏/bake 调试日志到文件（<mod数据目录>/logs/shadow_debug.log）
+        bool debugLog = true;
     } shadow;
 
     // 颜色 JSON 文件路径（相对于 mod 目录）

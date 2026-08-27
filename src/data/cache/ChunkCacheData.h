@@ -23,6 +23,9 @@ public:
 
     bool bakedDirty{false};
 
+    // 每次 markBakedDirty 递增；bake 期间被重新标脏时 epoch 变化，用于避免清掉新脏标记
+    std::uint32_t bakedDirtyEpoch{0};
+
     mutable std::shared_mutex mutex_; // protects all fields above
 
 public:
@@ -47,11 +50,25 @@ public:
     void markBakedDirty() {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         bakedDirty = true;
+        ++bakedDirtyEpoch;
     }
 
     bool takeBakedDirty() {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         if (!bakedDirty) return false;
+        bakedDirty = false;
+        return true;
+    }
+
+    [[nodiscard]] std::uint32_t getBakedDirtyEpoch() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return bakedDirtyEpoch;
+    }
+
+    // 仅当 epoch 未变（bake 期间没有新的标脏）时才清除脏标记，返回是否清除成功
+    bool takeBakedDirtyIfEpoch(std::uint32_t expectedEpoch) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        if (bakedDirtyEpoch != expectedEpoch) return false;
         bakedDirty = false;
         return true;
     }

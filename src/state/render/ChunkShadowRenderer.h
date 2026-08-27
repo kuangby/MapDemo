@@ -23,6 +23,10 @@ public:
     std::unordered_map<ChunkPosWithDim, std::shared_ptr<const ChunkCacheData>>
         helperChunksData; // <offsetChunkPos, ChunkCacheData>
 
+    // bake 期间高度查询统计：miss 表示邻 chunk 未加载，该方向的跨区块阴影会丢失
+    int heightQueryCount = 0;
+    int heightQueryMiss  = 0;
+
 public:
     explicit ChunkShadowRenderer(const ChunkPosWithDim& pos) : handlingChunkPos(pos) {}
 
@@ -32,7 +36,11 @@ public:
 public:
     [[nodiscard]] int getHeight(const WorldPos& offsetPos) {
         auto chunk = getChunk(offsetPos);
-        if (!chunk) return -65;
+        ++heightQueryCount;
+        if (!chunk) {
+            ++heightQueryMiss;
+            return -65;
+        }
         return chunk->getBlockBaseData(ChunkWorldPos{offsetPos}).height;
     }
 

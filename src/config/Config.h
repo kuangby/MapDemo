@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace map_demo::config {
 
@@ -137,6 +139,23 @@ struct TerrainConfig {
 
         // 是否输出阴影标脏/bake 调试日志到文件（<mod数据目录>/logs/shadow_debug.log）
         bool debugLog = true;
+
+        // bake 时需要详细追踪 ray-march 过程的方块世界坐标列表（用于定位阴影 bug）
+        // 前 4 个为柱子（遮挡物），后 8 个为其东南方向跨区块的潜在接收方块
+        std::vector<std::pair<int, int>> watchBlocks = {
+            {-105, -62},
+            {-102, -62},
+            { -99, -62},
+            { -95, -62},
+            { -98, -61},
+            { -97, -60},
+            { -96, -59},
+            { -95, -58},
+            { -94, -61},
+            { -93, -60},
+            { -92, -59},
+            { -91, -58}
+        };
     } shadow;
 
     // 颜色 JSON 文件路径（相对于 mod 目录）

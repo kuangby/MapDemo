@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config/Config.h"
+
 #include <fmt/format.h>
 
 #include <fstream>
@@ -23,6 +25,24 @@ public:
 
     void               setEnabled(bool enabled) { enabled_ = enabled; }
     [[nodiscard]] bool isEnabled() const { return enabled_; }
+
+    // 世界方块坐标是否在观察列表中（bake 时输出详细 ray-march 追踪）
+    [[nodiscard]] static bool isWatchedBlock(int worldX, int worldZ) {
+        for (auto& [x, z] : config::getConfig().terrain.shadow.watchBlocks) {
+            if (x == worldX && z == worldZ) return true;
+        }
+        return false;
+    }
+
+    // 观察列表中是否有方块落在指定 chunk 内
+    [[nodiscard]] static bool hasWatchedBlockInChunk(int chunkX, int chunkZ) {
+        for (auto& [x, z] : config::getConfig().terrain.shadow.watchBlocks) {
+            int bx = x >= 0 ? x / 16 : (x + 1) / 16 - 1;
+            int bz = z >= 0 ? z / 16 : (z + 1) / 16 - 1;
+            if (bx == chunkX && bz == chunkZ) return true;
+        }
+        return false;
+    }
 
     void shutdown();
 

@@ -49,6 +49,33 @@ HWND              g_hWnd = nullptr;
 std::atomic<bool> g_initialized{false};
 GraphicsAPI       g_currentAPI = GraphicsAPI::Unknown;
 
+// 窗口过程子类化：游戏在 WM_SETCURSOR 里把光标设为隐藏光标，
+// 大地图打开时拦截该消息强制显示箭头光标
+WNDPROC g_origWndProc = nullptr;
+
+LRESULT CALLBACK wndProcHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_SETCURSOR && MapState::getInstance().showWorldMap) {
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+        return TRUE;
+    }
+    return CallWindowProcW(g_origWndProc, hwnd, msg, wParam, lParam);
+}
+
+void installWndProcHook() {
+    if (g_hWnd && !g_origWndProc) {
+        g_origWndProc = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtrW(g_hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&wndProcHook))
+        );
+    }
+}
+
+void removeWndProcHook() {
+    if (g_hWnd && g_origWndProc) {
+        SetWindowLongPtrW(g_hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_origWndProc));
+        g_origWndProc = nullptr;
+    }
+}
+
 void shutdownImGui() {
     if (g_initialized) {
         ImGui_ImplDX11_Shutdown();
@@ -148,6 +175,7 @@ bool initGraphics(IDXGISwapChain* pSwapChain) {
         pSwapChain->GetDesc(&sd);
         g_hWnd = sd.OutputWindow;
         if (!g_hWnd) g_hWnd = FindWindowW(L"Minecraft", NULL);
+        installWndProcHook();
 
         ImGui::CreateContext();
         ImGuiIO& io     = ImGui::GetIO();
@@ -430,6 +458,7 @@ void shutdown() {
         ll::memory::unhook(g_targetExecuteCommandLists, g_detourExecuteCommandLists);
     }
     shutdownImGui();
+    removeWndProcHook();
     if (g_pd3d11DeviceContext) {
         g_pd3d11DeviceContext->Release();
         g_pd3d11DeviceContext = nullptr;

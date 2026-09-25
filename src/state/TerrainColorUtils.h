@@ -9,22 +9,15 @@
 
 #include <string>
 
+class BlockSource;
+
 namespace map_demo {
-
-// 获取3D生物群系名称（pos 的 y 为基于 minY 的相对高度）
-std::string getBiomeName(LevelChunk* chunk, ChunkBlockPos pos);
-
-// 获取 biome fallback 颜色
-BlockColor getBiomeFallbackColor(const std::string& biomeName);
-
-// 获取带生物群系混合的方块颜色
-BlockColor getBlockColorWithBiome(const std::string& name, const std::string& biomeName);
 
 // 判断方块是否不透明（特判优化）
 bool isBlockOpaque(const std::string& name, int dim);
 
 // 处理水的特殊效果（透明水）
-BlockColor processWater(LevelChunk* chunk, int cx, int cz, int waterSurfaceY, int minY);
+BlockColor processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, int waterSurfaceY, int minY);
 
 // 单个像素的地形信息
 struct TerrainPixelInfo {

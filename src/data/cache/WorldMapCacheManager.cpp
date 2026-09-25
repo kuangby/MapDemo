@@ -55,10 +55,14 @@ std::shared_ptr<WorldMapRegionData> WorldMapCacheManager::getOrCreateRegion(cons
         if (it != regions_.end() && it->second) return it->second;
     }
     std::unique_lock<std::shared_mutex> lock(mutex_);
-    auto&                               region = regions_[pos];
-    // 若正处于"排队加载中"（nullptr），直接覆盖为新数据：bake 结果比磁盘旧数据更新
-    if (!region) region = std::make_shared<WorldMapRegionData>();
-    return region;
+    auto [it, inserted] = regions_.try_emplace(pos, nullptr);
+    if (inserted && dbOpen_) {
+        // bake 先于渲染请求创建了 region：也必须排队读盘，
+        // 否则磁盘旧数据永远没机会合并进来，未扫到的 chunk 会被当成无数据
+        loadQueue_.push_back(pos);
+    }
+    if (!it->second) it->second = std::make_shared<WorldMapRegionData>();
+    return it->second;
 }
 
 void WorldMapCacheManager::updateFromRegionBake(
@@ -121,8 +125,9 @@ void WorldMapCacheManager::updateFromChunkBake(const ChunkPosWithDim& chunkPos, 
 }
 
 WorldMapCacheManager::FetchResult WorldMapCacheManager::fetchForRender(
-    const RegionPos&                                          pos,
-    std::array<std::uint8_t, WorldMapRegionData::kDataSize>&  out
+    const RegionPos&                                         pos,
+    std::array<std::uint8_t, WorldMapRegionData::kDataSize>& out,
+    bool                                                     forceCopy
 ) {
     {
         std::shared_lock<std::shared_mutex> lock(mutex_);
@@ -130,7 +135,8 @@ WorldMapCacheManager::FetchResult WorldMapCacheManager::fetchForRender(
         if (it != regions_.end()) {
             auto& region = it->second;
             if (!region || !region->everFilled) return FetchResult::NotLoaded;
-            if (!region->textureDirty.exchange(false)) return FetchResult::NoChange;
+            if (!forceCopy && !region->textureDirty.exchange(false)) return FetchResult::NoChange;
+            if (forceCopy) region->textureDirty = false;
             region->copyColors(out);
             return FetchResult::Updated;
         }
@@ -179,6 +185,7 @@ void WorldMapCacheManager::onEnterWorld(ClientInstance* clientInstance, LocalPla
         std::filesystem::create_directories(root, ec);
         storageDir_ = root;
         db_         = std::make_unique<ll::data::KeyValueDB>(root);
+        dbOpen_     = true;
         self.getLogger().debug("WorldMap disk cache opened at: {}", root.string());
     }
     {
@@ -201,6 +208,7 @@ void WorldMapCacheManager::onLeaveWorld() {
     flushDirty();
     {
         std::lock_guard<std::mutex> dbLock(dbMutex_);
+        dbOpen_ = false;
         db_.reset();
         storageDir_.clear();
     }
@@ -256,14 +264,39 @@ void WorldMapCacheManager::ioWorker() {
                 if (!db_) break;
                 blob = db_->get(makeKey(pos));
             }
-            auto data = std::make_shared<WorldMapRegionData>();
-            if (blob && blob->size() == WorldMapRegionData::kDataSize) {
-                data->loadColors(blob->data(), blob->size());
-            }
+            bool hasDiskData = blob && blob->size() == WorldMapRegionData::kDataSize;
+
             std::unique_lock<std::shared_mutex> lock(mutex_);
             auto                                it = regions_.find(pos);
-            // 仅当仍是"排队中"占位时才插入；若已被 bake 结果覆盖则丢弃磁盘旧数据
-            if (it != regions_.end() && !it->second) it->second = std::move(data);
+            if (it == regions_.end()) continue; // 占位可能被清空（离开世界），直接丢弃
+            if (!it->second) {
+                // 仍是"排队中"占位：直接插入
+                auto data = std::make_shared<WorldMapRegionData>();
+                if (hasDiskData) data->loadColors(blob->data(), blob->size());
+                it->second = std::move(data);
+            } else if (hasDiskData) {
+                // bake 已先写入（只有本次 bake 到的 chunk 有数据）：
+                // 合并而非丢弃——磁盘旧数据只填充当前仍为透明（alpha==0，即无数据）的像素
+                auto&    region   = it->second;
+                auto*    src      = reinterpret_cast<const std::uint8_t*>(blob->data());
+                bool     merged   = false;
+                {
+                    std::unique_lock<std::shared_mutex> rlock(region->mutex_);
+                    for (std::size_t i = 0; i < WorldMapRegionData::kDataSize; i += 4) {
+                        if (region->colors[i + 3] == 0 && src[i + 3] != 0) {
+                            region->colors[i + 0] = src[i + 0];
+                            region->colors[i + 1] = src[i + 1];
+                            region->colors[i + 2] = src[i + 2];
+                            region->colors[i + 3] = src[i + 3];
+                            merged                = true;
+                        }
+                    }
+                }
+                if (merged) {
+                    region->diskDirty    = true;
+                    region->textureDirty = true;
+                }
+            }
         }
 
         // 通道 2：每 ~2 秒批量写回 dirty region

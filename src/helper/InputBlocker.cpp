@@ -53,24 +53,12 @@ void InputBlocker::registerListeners() {
 
         {
             std::lock_guard<std::mutex> lock(s_mouseMutex);
-            s_mouse.x       = static_cast<float>(event.x());
-            s_mouse.y       = static_cast<float>(event.y());
-            char buttonId   = event.actionButtonId();
-            char buttonData = event.buttonData();
-            // MC 约定：1=左键 2=右键 3=中键 4=滚轮；buttonData 非 0 表示按下，滚轮时为滚动方向
-            switch (buttonId) {
-            case 1:
-                s_mouse.leftDown = buttonData != 0;
-                break;
-            case 2:
-                s_mouse.rightDown = buttonData != 0;
-                break;
-            case 4:
+            // 只记录滚轮（相对量）供大地图缩放；
+            // 光标位置/左键状态由 WorldMapRenderer 直接读 Win32（事件里的 x/y 坐标系不可靠）
+            if (event.actionButtonId() == 4) {
+                char buttonData = event.buttonData();
                 // 滚轮 buttonData 可能是 ±120 一类的绝对量，归一化为方向，避免缩放一步到顶
                 s_mouse.wheelDelta += (buttonData > 0) ? 1 : ((buttonData < 0) ? -1 : 0);
-                break;
-            default:
-                break;
             }
         }
         event.cancel();

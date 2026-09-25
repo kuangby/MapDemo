@@ -448,4 +448,6 @@ ID3D11Device* getDevice() { return g_pd3d11Device; }
 
 ID3D11DeviceContext* getContext() { return g_pd3d11DeviceContext; }
 
+HWND getHwnd() { return g_hWnd; }
+
 } // namespace map_demo::DX11Hook

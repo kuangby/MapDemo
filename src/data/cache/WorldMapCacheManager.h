@@ -52,9 +52,11 @@ public:
     void updateFromChunkBake(const ChunkPosWithDim& chunkPos, const ShadowRenderChunkData& baked);
 
     // 渲染线程：取出待上传纹理的 region 图
+    // forceCopy=true 时，只要 region 有数据就拷贝并返回 Updated（用于纹理被回收后重建）
     FetchResult fetchForRender(
-        const RegionPos&                                               pos,
-        std::array<std::uint8_t, WorldMapRegionData::kDataSize>& out
+        const RegionPos&                                              pos,
+        std::array<std::uint8_t, WorldMapRegionData::kDataSize>& out,
+        bool                                                          forceCopy = false
     );
 
     // 渲染线程：region 是否已有可用数据（无数据则画占位底色，不建纹理）
@@ -87,7 +89,8 @@ private:
 
     std::unique_ptr<ll::data::KeyValueDB> db_;
     std::filesystem::path                 storageDir_;
-    std::mutex                            dbMutex_; // 保护 db_ 与 storageDir_（IO 线程与主线程并发访问）
+    std::mutex                            dbMutex_;  // 保护 db_ 与 storageDir_（IO 线程与主线程并发访问）
+    std::atomic<bool>                     dbOpen_{false}; // db_ 是否可用（无锁读取；锁顺序固定为 dbMutex_ -> mutex_）
 
     std::thread       ioThread_;
     std::atomic<bool> ioStop_{false};

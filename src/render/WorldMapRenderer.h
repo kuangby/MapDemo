@@ -33,7 +33,7 @@ private:
     RegionTexture* ensureTexture(const RegionPos& pos, int& createdThisFrame);
     void           releaseTexture(RegionTexture& rt);
     void           garbageCollectTextures();
-    void           handleInput(double& centerX, double& centerZ, float zoom, float screenW, float screenH);
+    void           handleInput(float zoom);
 
     std::unordered_map<RegionPos, RegionTexture> textures_;
     int                                          frameCounter_ = 0;

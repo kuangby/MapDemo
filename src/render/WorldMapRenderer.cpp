@@ -91,11 +91,13 @@ WorldMapRenderer::RegionTexture* WorldMapRenderer::ensureTexture(const RegionPos
     auto* context = DX11Hook::getContext();
     if (!device || !context) return nullptr;
 
-    // 纹理已存在时才无条件取更新；纹理不存在且超出每帧新建预算时，留到下一帧再取
-    if (!rt.tex && createdThisFrame >= config::getConfig().worldMap.maxNewTexturesPerFrame) return nullptr;
+    // 纹理不存在时需要新建：受每帧新建预算限制，并强制拷贝数据
+    // （纹理可能被 VRAM 回收删掉，此时 textureDirty 早已清除，不强制拷贝会永远显示占位底色）
+    bool needCreate = !rt.tex;
+    if (needCreate && createdThisFrame >= config::getConfig().worldMap.maxNewTexturesPerFrame) return nullptr;
 
     static thread_local std::array<std::uint8_t, WorldMapRegionData::kDataSize> buf;
-    auto result = WorldMapCacheManager::getInstance().fetchForRender(pos, buf);
+    auto result = WorldMapCacheManager::getInstance().fetchForRender(pos, buf, /*forceCopy=*/needCreate);
     if (result == WorldMapCacheManager::FetchResult::NotLoaded) return nullptr;
     if (result == WorldMapCacheManager::FetchResult::NoChange) return rt.srv ? &rt : nullptr;
 
@@ -127,42 +129,43 @@ WorldMapRenderer::RegionTexture* WorldMapRenderer::ensureTexture(const RegionPos
     return &rt;
 }
 
-void WorldMapRenderer::handleInput(double& centerX, double& centerZ, float zoom, float screenW, float screenH) {
+void WorldMapRenderer::handleInput(float zoom) {
     auto& state = MapState::getInstance();
     auto& cfg   = config::getConfig().worldMap;
-    auto  mouse = InputBlocker::consumeMouseState();
 
-    // 左键拖拽平移
-    if (mouse.leftDown && prevLeftDown_) {
-        state.worldMapOffsetX -= (mouse.x - prevMouseX_) / zoom;
-        state.worldMapOffsetZ -= (mouse.y - prevMouseY_) / zoom;
+    // 光标位置与左键状态直接读 Win32：
+    // MouseInputEvent 的 x/y 坐标系与 ImGui 显示尺寸不一致，不能用于拖拽
+    float mouseX   = prevMouseX_;
+    float mouseY   = prevMouseY_;
+    bool  leftDown = false;
+    if (HWND hwnd = DX11Hook::getHwnd()) {
+        POINT pt{};
+        if (GetCursorPos(&pt) && ScreenToClient(hwnd, &pt)) {
+            mouseX = static_cast<float>(pt.x);
+            mouseY = static_cast<float>(pt.y);
+        }
+        leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     }
 
-    // 滚轮缩放：以玩家箭头位置（世界坐标即平滑相机目标点）为中心
+    // 左键拖拽平移
+    if (leftDown && prevLeftDown_) {
+        state.worldMapOffsetX -= (mouseX - prevMouseX_) / zoom;
+        state.worldMapOffsetZ -= (mouseY - prevMouseY_) / zoom;
+    }
+
+    // 滚轮缩放：以屏幕中心为缩放中心（视野中心不变，只改缩放值）
+    auto mouse = InputBlocker::consumeMouseState();
     if (mouse.wheelDelta != 0) {
-        float newZoom = std::clamp(
+        state.worldMapZoom = std::clamp(
             zoom * std::pow(cfg.zoomStep, static_cast<float>(mouse.wheelDelta)),
             cfg.minZoom,
             cfg.maxZoom
         );
-        if (newZoom != zoom) {
-            double anchorX = state.smoothX();
-            double anchorZ = state.smoothZ();
-            // 箭头当前屏幕位置
-            double arrowSX = (anchorX - centerX) * zoom + screenW * 0.5;
-            double arrowSZ = (anchorZ - centerZ) * zoom + screenH * 0.5;
-            // 缩放后箭头仍停留在原屏幕位置
-            centerX = anchorX - (arrowSX - screenW * 0.5) / newZoom;
-            centerZ = anchorZ - (arrowSZ - screenH * 0.5) / newZoom;
-            state.worldMapOffsetX = static_cast<float>(centerX - anchorX);
-            state.worldMapOffsetZ = static_cast<float>(centerZ - anchorZ);
-            state.worldMapZoom    = newZoom;
-        }
     }
 
-    prevMouseX_   = mouse.x;
-    prevMouseY_   = mouse.y;
-    prevLeftDown_ = mouse.leftDown;
+    prevMouseX_   = mouseX;
+    prevMouseY_   = mouseY;
+    prevLeftDown_ = leftDown;
 }
 
 void WorldMapRenderer::render() {
@@ -173,6 +176,11 @@ void WorldMapRenderer::render() {
     }
 
     ++frameCounter_;
+
+    // 游戏会每帧用 ClipCursor 把光标锁死在窗口中心（隐形光标），
+    // 大地图打开期间每帧解除锁定并恢复箭头光标，否则无法拖拽/交互
+    ClipCursor(nullptr);
+    SetCursor(LoadCursorW(nullptr, IDC_ARROW));
 
     if (clearRequested_.exchange(false)) {
         for (auto& [pos, rt] : textures_) releaseTexture(rt);
@@ -197,7 +205,7 @@ void WorldMapRenderer::render() {
     double centerX = static_cast<double>(state.smoothX()) + state.worldMapOffsetX;
     double centerZ = static_cast<double>(state.smoothZ()) + state.worldMapOffsetZ;
 
-    handleInput(centerX, centerZ, zoom, screenW, screenH);
+    handleInput(zoom);
     zoom = state.worldMapZoom;
 
     auto worldToScreen = [&](double wx, double wz) -> ImVec2 {

@@ -37,4 +37,7 @@ GraphicsAPI getCurrentAPI();
 ID3D11Device*        getDevice();
 ID3D11DeviceContext* getContext();
 
+// 游戏窗口句柄（渲染线程读取光标位置用）
+HWND getHwnd();
+
 } // namespace map_demo::DX11Hook

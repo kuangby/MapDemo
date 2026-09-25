@@ -15,12 +15,9 @@ namespace map_demo {
 class InputBlocker {
 public:
     // 大地图 UI 的鼠标输入快照（事件被拦截前记录，供 WorldMapRenderer 每帧消费）
+    // 注：光标位置/左键状态由 WorldMapRenderer 直接读 Win32（事件里的 x/y 坐标系不可靠）
     struct MouseState {
-        float x{0.0f};
-        float y{0.0f};
-        bool  leftDown{false};
-        bool  rightDown{false};
-        int   wheelDelta{0}; // 自上次消费以来累积的滚轮量
+        int wheelDelta{0}; // 自上次消费以来累积的滚轮量
     };
 
     static void registerListeners();

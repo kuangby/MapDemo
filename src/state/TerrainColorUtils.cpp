@@ -1,7 +1,6 @@
 #include "state/TerrainColorUtils.h"
 
 #include "config/Config.h"
-#include "state/BlockColorManager.h"
 
 #include "mc/world/level/dimension/Dimension.h"
 #include <mc/world/level/BlockPos.h>
@@ -14,6 +13,9 @@
 #include <mc/world/level/block/Block.h>
 #include <mc/world/level/block/BlockType.h>
 #include <mc/world/level/block/components/BlockMapColorComponent.h>
+#include <mc/world/level/material/Material.h>
+
+#include "mod/MapDemo.h"
 
 #include <algorithm>
 
@@ -34,6 +36,15 @@ static mce::Color getVanillaMapColor(Block const& block, BlockSource& source, Bl
         auto const& policy = BiomeColorSampling::getMapPolicy(comp->mTintMethod);
         mce::Color  tint   = policy.get(source, pos);
         mce::Color  base   = comp->mMapColor.get();
+
+
+        // MapDemo::getInstance().getSelf().getLogger().info(
+        //     "biome: {}, block: {}, color: {}, tint: {}",
+        //     source.getBiome(pos).mHash->c_str(),
+        //     block.getTypeName(),
+        //     base,
+        //     tint
+        // );
         return mce::Color(base.r * tint.r, base.g * tint.g, base.b * tint.b, base.a);
     }
     return block.getBlockType().getMapColor(source, pos, block);
@@ -50,46 +61,28 @@ static BlockColor getBlockMapColor(LevelChunk* chunk, BlockSource& source, Chunk
     // 占位符方块：按透明处理，避免无效颜色写入缓存
     if (block.getTypeName() == "minecraft:client_request_placeholder_block") return BlockColor{0, 0, 0, 0};
 
-    // 水：改用群系水面颜色（biome_color.json 的 resource 风格强染色），
+    BlockPos worldPos(chunk->mPosition->x * 16 + pos.x, y, chunk->mPosition->z * 16 + pos.z);
+
+    // 水：改用群系水面颜色（WaterRenderAttributes，游戏内渲染水色，resource 风格强染色），
     // 原版地图水色（mMapWaterColorARGB）各群系差异太小
     if (block.getTypeName() == "minecraft:water") {
-        auto const& biome      = chunk->getBiome(localPos);
-        auto        biomeColor = BlockColorManager::getInstance().getBiomeColor(biome.mHash.get().getString());
-        if (biomeColor.hasWater) {
-            return BlockColor{biomeColor.water.r, biomeColor.water.g, biomeColor.water.b, 255};
-        }
+        int argb = BiomeColorSampling::getWaterColor(chunk->getBiome(localPos), worldPos);
+        return BlockColor{
+            static_cast<std::uint8_t>((argb >> 16) & 0xFF),
+            static_cast<std::uint8_t>((argb >> 8) & 0xFF),
+            static_cast<std::uint8_t>(argb & 0xFF),
+            255
+        };
     }
 
-    BlockPos worldPos(chunk->mPosition->x * 16 + pos.x, y, chunk->mPosition->z * 16 + pos.z);
     return toBlockColor(getVanillaMapColor(block, source, worldPos));
 }
 
 // 无方块可取时的 fallback 颜色（透明）
 static BlockColor getEmptyColor() { return BlockColor{0, 0, 0, 0}; }
 
-// 判断方块是否不透明（特判优化）
-bool isBlockOpaque(const std::string& name, int dim) {
-    // 特判优化：常见方块直接返回，避免频繁查表
-    if (dim == 0) { // 主世界
-        if (name == "minecraft:stone" || name == "minecraft:deepslate" || name == "minecraft:grass_block"
-            || name == "minecraft:dirt" || name == "minecraft:bedrock") {
-            return true;
-        }
-    } else if (dim == 1) { // 地狱
-        if (name == "minecraft:netherrack" || name == "minecraft:bedrock" || name == "minecraft:soul_sand"
-            || name == "minecraft:soul_soil") {
-            return true;
-        }
-    } else if (dim == 2) { // 末地
-        if (name == "minecraft:end_stone" || name == "minecraft:bedrock") {
-            return true;
-        }
-    }
-
-    // 通用判断：使用 block_color.json 的 alpha 通道
-    auto color = BlockColorManager::getInstance().getBlockColor(name);
-    return color.a == 255;
-}
+// 判断方块是否不透明（材质为固体即视为不透明，替代原 block_color.json 的 alpha 查表）
+static bool isBlockOpaque(Block const& block) { return block.getMaterial().mSolid; }
 
 // 处理水的特殊效果（透明水）
 BlockColor processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, int waterSurfaceY, int minY) {
@@ -145,9 +138,8 @@ BlockColor processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, 
 // 基于 cameraHeight 的方块颜色获取，同时返回高度信息
 BlockColor
 getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight, bool& outHitPlaceholder) {
-    int minY  = chunk->mMin->y;
-    int maxY  = chunk->mMax->y;
-    int dimId = chunk->mDimension.getDimensionId();
+    int minY = chunk->mMin->y;
+    int maxY = chunk->mMax->y;
 
     BlockSource& source = chunk->mDimension.getBlockSourceFromMainChunkSource();
 
@@ -159,13 +151,16 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
         return getEmptyColor();
     }
 
-    auto getBlockName = [&](int y) -> std::string {
-        ChunkBlockPos localPos(
+    auto getBlockAt = [&](int y) -> Block const& {
+        return chunk->getBlock(ChunkBlockPos(
             static_cast<uchar>(pos.x),
             ChunkLocalHeight{static_cast<short>(y - minY)},
             static_cast<uchar>(pos.z)
-        );
-        std::string name = chunk->getBlock(localPos).getTypeName();
+        ));
+    };
+
+    auto getBlockName = [&](int y) -> std::string {
+        std::string name = getBlockAt(y).getTypeName();
         if (name == "minecraft:client_request_placeholder_block") outHitPlaceholder = true;
         return name;
     };
@@ -258,7 +253,7 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
     }
 
     // 情况 2: cameraHeight 处不是空气，判断透明度
-    bool isOpaque = isBlockOpaque(cameraName, dimId);
+    bool isOpaque = isBlockOpaque(getBlockAt(cameraHeight));
 
     if (isOpaque) {
         // 不透明：跳过第一段连续的不透明方块，找到第一个半透明方块
@@ -282,7 +277,7 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
                 return getEmptyColor();
             }
 
-            bool currentOpaque = isBlockOpaque(name, dimId);
+            bool currentOpaque = isBlockOpaque(getBlockAt(y));
             if (!currentOpaque) {
                 // 找到半透明方块，直接显示
                 if (config::getConfig().terrain.enableTransparentWater && name == "minecraft:water") {

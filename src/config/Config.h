@@ -157,10 +157,6 @@ struct TerrainConfig {
             { -91, -58}
         };
     } shadow;
-
-    // 颜色 JSON 文件路径（相对于 mod 目录）
-    const char* blockColorPath = "resources/colors/block_color.json";
-    const char* biomeColorPath = "resources/colors/biome_color.json";
 };
 
 // 大地图配置

@@ -7,14 +7,9 @@
 #include <mc/world/level/ChunkBlockPos.h>
 #include <mc/world/level/chunk/LevelChunk.h>
 
-#include <string>
-
 class BlockSource;
 
 namespace map_demo {
-
-// 判断方块是否不透明（特判优化）
-bool isBlockOpaque(const std::string& name, int dim);
 
 // 处理水的特殊效果（透明水）
 BlockColor processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, int waterSurfaceY, int minY);

@@ -275,4 +275,24 @@ void markAffectedChunksDirty(const std::unordered_set<ChunkPosWithDim>& chunks) 
     }
 }
 
+void markSoftDirty(const ChunkPosWithDim& pos) {
+    auto& mapCacheManager = MapCacheManager::getInstance();
+    auto  region          = mapCacheManager.getRegion(RegionPos(pos));
+    if (!region) return;
+    auto chunk = region->getChunkData(RegionChunkPos(pos));
+    // 未加载数据的 chunk 首扫时会全量 bake；full dirty 已涵盖 soft
+    if (!chunk || !chunk->loadChunkBaseData || chunk->isBakedDirty()) return;
+    chunk->markBakedSoftDirty();
+    region->markBakedDirty();
+}
+
+void markRingSoftDirty(const ChunkPosWithDim& center) {
+    for (int dz = -1; dz <= 1; ++dz) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (!dx && !dz) continue;
+            markSoftDirty(ChunkPosWithDim{center.x + dx, center.z + dz, center.dimId});
+        }
+    }
+}
+
 } // namespace map_demo

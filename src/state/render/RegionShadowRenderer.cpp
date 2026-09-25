@@ -11,6 +11,7 @@
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/WorldPos.h"
+#include "state/ShadowAffectedChunk.h"
 
 
 #include <algorithm>
@@ -56,25 +57,42 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
     WorldMapCacheManager::getInstance().updateFromRegionBake(handlingRegionPos, handlingRegion);
 
     bool keptDirty = false;
+    // shadowOriginData 发生变化的 region 边界 chunk：其 region 外邻居的柔化随之失效
+    std::vector<ChunkPosWithDim> changedBoundaryChunks;
     for (int regionChunkZ = 0; regionChunkZ < 16; regionChunkZ++) {
         for (int regionChunkX = 0; regionChunkX < 16; regionChunkX++) {
             auto shadowChunkData = handlingRegion[regionChunkZ][regionChunkX];
             if (!shadowChunkData) continue;
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
+            bool isBoundary =
+                regionChunkX == 0 || regionChunkX == 15 || regionChunkZ == 0 || regionChunkZ == 15;
+            bool shadowChanged = false;
             for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
                 for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
                     auto& blockData            = chunkData->blocksData[chunkWorldZ][chunkWorldX];
                     auto& shadowBlockData      = shadowChunkData->blocksData[chunkWorldZ][chunkWorldX];
                     blockData.bakedColor       = shadowBlockData.color;
+                    if (isBoundary && !shadowChanged
+                        && blockData.shadowOriginData != shadowBlockData.shadowOriginData) {
+                        shadowChanged = true;
+                    }
                     blockData.shadowOriginData = std::move(shadowBlockData.shadowOriginData);
                 }
             }
             chunkData->shadowScale = shadowChunkData->shadowScale;
+            if (shadowChanged) {
+                changedBoundaryChunks.emplace_back(
+                    handlingRegionPos.x * 16 + regionChunkX,
+                    handlingRegionPos.z * 16 + regionChunkZ,
+                    handlingRegionPos.dimId
+                );
+            }
             // region bake 已覆盖该 chunk，清除其 chunk 级脏标记（已持有 unique_lock，直接赋值）；
             // 但 bake 期间被重新标脏（epoch 变化）的 chunk 必须保留脏标记，否则阴影残留
             if (chunkData->bakedDirtyEpoch == dirtyEpochSnapshot[regionChunkZ][regionChunkX]) {
                 chunkData->bakedDirty = false;
+                chunkData->softDirty  = false; // region 全量烘已涵盖柔化
             } else {
                 keptDirty = true;
             }
@@ -83,6 +101,18 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
 
     // 有 chunk 在 bake 期间被重新标脏：重新武装 region 防抖，保证脏 chunk 会被重新调度
     if (keptDirty) data->markBakedDirty();
+
+    // region 内邻居本次已随全量 bake 修正，只需标 region 外的邻居（柔化级，跳过采样）
+    for (const auto& chunkPos : changedBoundaryChunks) {
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (!dx && !dz) continue;
+                ChunkPosWithDim neighbor{chunkPos.x + dx, chunkPos.z + dz, chunkPos.dimId};
+                if (RegionPos(neighbor) == handlingRegionPos) continue;
+                markSoftDirty(neighbor);
+            }
+        }
+    }
 }
 
 // Style 1: simple heightmap gradient shadow, light from northwest

@@ -31,7 +31,9 @@ public:
     explicit ChunkShadowRenderer(const ChunkPosWithDim& pos) : handlingChunkPos(pos) {}
 
     // 加锁快照一份 ChunkData，离线烘焙后写回
-    void bake(const std::shared_ptr<ChunkCacheData>& data);
+    // softOnly：只重做 PCF 柔化与 bevel（复用已存 shadowOriginData，跳过射线采样）；
+    // 无可复用阴影数据时自动回退全量烘焙
+    void bake(const std::shared_ptr<ChunkCacheData>& data, bool softOnly = false);
 
 public:
     [[nodiscard]] int getHeight(const WorldPos& offsetPos) {
@@ -77,6 +79,8 @@ private:
     void applyStyle2();
     void applyWaterOverlay();
     void applyShadowMap(int scale);
+    // PCF 柔化 + 汇总着色（applyShadowMap 的后半段，可独立于采样复用）
+    void applyShadowBlur(int scale);
     void applyBevel(int scale);
 };
 } // namespace map_demo

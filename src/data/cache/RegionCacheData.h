@@ -88,6 +88,17 @@ public:
         }
     }
 
+    // 收集仅柔化级脏（softDirty 且非 full dirty）的 chunk
+    void collectSoftDirtyChunks(std::vector<RegionChunkPos>& out) const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        for (int z = 0; z < 16; ++z) {
+            for (int x = 0; x < 16; ++x) {
+                auto& chunk = chunksData[z][x];
+                if (chunk && chunk->isBakedSoftDirty() && !chunk->isBakedDirty()) out.emplace_back(x, z);
+            }
+        }
+    }
+
     void markEverBaked() {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         everBaked = true;

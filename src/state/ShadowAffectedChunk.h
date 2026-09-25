@@ -31,4 +31,11 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
 // （未加载的 chunk 首次扫描时会全量 bake，阴影天然正确，无需标脏）
 void markAffectedChunksDirty(const std::unordered_set<ChunkPosWithDim>& chunks);
 
+// 柔化级标脏：只重做 PCF 柔化与 bevel（复用已存 shadowOriginData，跳过射线采样）。
+// 跳过未加载数据的 chunk；已 full dirty 的 chunk 跳过（full 涵盖 soft）
+void markSoftDirty(const ChunkPosWithDim& pos);
+
+// 将 center 的 8 邻接 chunk 标记为 softDirty（邻居的柔化/bevel 依赖本 chunk 的边缘数据）
+void markRingSoftDirty(const ChunkPosWithDim& center);
+
 } // namespace map_demo

@@ -212,6 +212,8 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
     bool changed       = false;
     bool heightChanged = false;
+    bool firstLoaded   = false;
+    bool solidChanged  = false;
 
     int chunkMinHeight = std::numeric_limits<int>::max();
     int chunkMaxHeight = std::numeric_limits<int>::min();
@@ -242,6 +244,7 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                 if (!chunkData->loadChunkBaseData) {
 
                     chunkData->loadChunkBaseData = true;
+                    firstLoaded                  = true;
                     currentBlockData.color       = color;
                     currentBlockData.height      = static_cast<std::int16_t>(heightVal);
                     currentBlockData.solidHeight =
@@ -261,7 +264,8 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                     if (currentBlockData.solidHeight != chunk->mRenderHeightmap.get()[idx].mVal + minY) {
                         currentBlockData.solidHeight =
                             static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
-                        changed = true;
+                        changed      = true;
+                        solidChanged = true;
                     }
                 }
             }
@@ -278,25 +282,37 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
         regionData->markBakedDirty();
     }
 
-    // 高度变化会影响下游 chunk 的阴影：以整个 chunk 为单位计算受影响 chunk 并标脏
-    if (heightChanged) {
+    // 高度变化会影响下游 chunk 的阴影：以整个 chunk 为单位计算受影响 chunk 并标脏。
+    // 首扫时该 chunk 此前对邻居而言是"缺失"（射线 -65 无遮挡），下游阴影从零变为新地形投射，
+    // 用极低 lowerHeight 使裁剪规则 2 永不误跳过（函数内为 float 运算，无溢出）
+    if (heightChanged || firstLoaded) {
         const float deg2rad     = 3.1415926535f / 180.0f;
         auto&       shadowCfg   = config::getConfig().terrain.shadow;
         float       azimuth_rad = shadowCfg.lightAzimuth * deg2rad;
         float       zenith_rad  = shadowCfg.lightZenith * deg2rad;
+
+        int higherHeight = firstLoaded ? chunkMaxHeight : std::max(oldMaxHeight, chunkMaxHeight);
+        int lowerHeight  = firstLoaded ? std::numeric_limits<int>::min() / 2
+                                       : std::min(oldMinHeight, chunkMinHeight);
 
         auto affected = getAffectedChunksForRect(
             key.x * 16,
             key.z * 16,
             key.x * 16 + 16,
             key.z * 16 + 16,
-            std::max(oldMaxHeight, chunkMaxHeight),
-            std::min(oldMinHeight, chunkMinHeight),
+            higherHeight,
+            lowerHeight,
             key.dimId,
             azimuth_rad,
             zenith_rad
         );
         markAffectedChunksDirty(std::unordered_set<ChunkPosWithDim>(affected.begin(), affected.end()));
+    }
+
+    // solidHeight 变化只影响 bevel（不涉阴影采样）：邻圈 chunk 做柔化级重算即可。
+    // 首扫/full 标脏已涵盖；邻居对"缺失→出现"的柔化修正由 bake 写回时的 shadowOriginData 对比触发
+    if (solidChanged && !heightChanged && !firstLoaded) {
+        markRingSoftDirty(key);
     }
 
     return true;
@@ -331,6 +347,7 @@ bool TerrainScanner::scanColumn(
 
     bool changed       = false;
     bool heightChanged = false;
+    bool solidChanged  = false;
     int  oldHeight     = 0;
 
     {
@@ -356,6 +373,7 @@ bool TerrainScanner::scanColumn(
         if (currentBlockData.solidHeight != solidVal) {
             currentBlockData.solidHeight = static_cast<std::int16_t>(solidVal);
             changed                      = true;
+            solidChanged                 = true;
         }
         // 高度范围只扩不缩：收缩需要整扫（周期重扫会修正），
         // 偏大的范围只会让阴影剔除更保守，不会错剔除
@@ -380,6 +398,11 @@ bool TerrainScanner::scanColumn(
             shadowCfg.lightZenith * deg2rad
         );
         markAffectedChunksDirty(std::unordered_set<ChunkPosWithDim>(affected.begin(), affected.end()));
+    }
+
+    // solidHeight 变化只影响邻圈 bevel：柔化级重算即可
+    if (solidChanged && !heightChanged) {
+        markRingSoftDirty(key);
     }
 
     return true;

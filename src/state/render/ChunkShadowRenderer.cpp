@@ -8,6 +8,7 @@
 #include "data/pos/ChunkPosWithDim.h"
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/WorldPos.h"
+#include "state/ShadowAffectedChunk.h"
 
 
 #include <algorithm>
@@ -21,13 +22,16 @@
 
 namespace map_demo {
 
-void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data) {
+void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data, bool softOnly) {
     if (!data || !data->loadChunkBaseData) return;
 
     // Snapshot raw data under lock, then bake offline without holding the lock
     {
         std::shared_lock<std::shared_mutex> lock(data->mutex_);
         handlingChunk = std::make_shared<ShadowRenderChunkData>(*data);
+        // ShadowRenderChunkData 构造不拷贝基类字段，shadowScale 需手动携带，
+        // soft 模式靠它判断已存 shadowOriginData 是否与当前 renderScale 匹配
+        handlingChunk->shadowScale = data->shadowScale;
     }
 
     auto& cfg = config::getConfig().terrain.shadow;
@@ -36,10 +40,19 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data) {
     heightQueryCount = 0;
     heightQueryMiss  = 0;
 
+    bool resampled = false;
     if (cfg.renderStyle == 1) {
         applyStyle1();
     } else if (cfg.renderStyle == 2) {
-        applyStyle2();
+        int scale = std::clamp(cfg.renderScale, 1, 16);
+        if (softOnly && handlingChunk->shadowScale == scale) {
+            // 柔化级重算：复用已存 shadowOriginData，只做 PCF 柔化与 bevel
+            applyShadowBlur(scale);
+            applyBevel(scale);
+        } else {
+            applyStyle2();
+            resampled = true;
+        }
     }
 
     // bake 结束、写回之前：把 bake 结果写入大地图 region 缓存（当前为 bake 工作线程，缓存内部加锁）
@@ -47,6 +60,7 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data) {
         WorldMapCacheManager::getInstance().updateFromChunkBake(handlingChunkPos, *handlingChunk);
     }
 
+    bool shadowDataChanged = false;
     {
         std::unique_lock<std::shared_mutex> lock(data->mutex_);
         for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
@@ -54,10 +68,20 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data) {
                 auto& blockData            = data->blocksData[chunkWorldZ][chunkWorldX];
                 auto& shadowBlockData      = handlingChunk->blocksData[chunkWorldZ][chunkWorldX];
                 blockData.bakedColor       = shadowBlockData.color;
+                if (resampled && !shadowDataChanged
+                    && blockData.shadowOriginData != shadowBlockData.shadowOriginData) {
+                    shadowDataChanged = true;
+                }
                 blockData.shadowOriginData = std::move(shadowBlockData.shadowOriginData);
             }
         }
         data->shadowScale = handlingChunk->shadowScale;
+    }
+
+    // 阴影原始数据发生变化：邻圈 chunk 的边缘 PCF 柔化/bevel 随之失效，标柔化级脏。
+    // 这也兜底了跨 region 的派发顺序问题（邻居先用了本 chunk 的旧数据做柔化，此处会再触发一次修正）
+    if (shadowDataChanged) {
+        markRingSoftDirty(handlingChunkPos);
     }
 }
 
@@ -264,6 +288,14 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
             chunk->shadowScale = scale;
         }
     }
+
+    applyShadowBlur(scale);
+}
+
+// PCF 柔化：对 shadowOriginData 做 box blur 并汇总到颜色；可独立于采样复用（柔化级重烘）
+void ChunkShadowRenderer::applyShadowBlur(int scale) {
+    auto& cfg = config::getConfig().terrain.shadow;
+    int   dimId = handlingChunkPos.dimId;
 
     const int pcfRadius = std::clamp(cfg.pcfRadius, 0, 8);
 

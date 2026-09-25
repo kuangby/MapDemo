@@ -26,6 +26,12 @@ public:
     // 每次 markBakedDirty 递增；bake 期间被重新标脏时 epoch 变化，用于避免清掉新脏标记
     std::uint32_t bakedDirtyEpoch{0};
 
+    // 柔化级脏标记：只需重做 PCF 柔化与 bevel（复用已存 shadowOriginData，跳过射线采样）
+    bool softDirty{false};
+
+    // 每次 markBakedSoftDirty 递增；语义同 bakedDirtyEpoch
+    std::uint32_t softDirtyEpoch{0};
+
     mutable std::shared_mutex mutex_; // protects all fields above
 
 public:
@@ -76,6 +82,30 @@ public:
     [[nodiscard]] bool isBakedDirty() const {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         return bakedDirty;
+    }
+
+    void markBakedSoftDirty() {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        softDirty = true;
+        ++softDirtyEpoch;
+    }
+
+    // 仅当 epoch 未变（bake 期间没有新的柔化标脏）时才清除，返回是否清除成功
+    bool takeBakedSoftDirtyIfEpoch(std::uint32_t expectedEpoch) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        if (softDirtyEpoch != expectedEpoch) return false;
+        softDirty = false;
+        return true;
+    }
+
+    [[nodiscard]] std::uint32_t getBakedSoftDirtyEpoch() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return softDirtyEpoch;
+    }
+
+    [[nodiscard]] bool isBakedSoftDirty() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return softDirty;
     }
 };
 } // namespace map_demo

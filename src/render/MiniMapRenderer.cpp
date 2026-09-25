@@ -193,19 +193,33 @@ void MiniMapRenderer::render() {
 
                 if (region->tickBakedDirty()) {
                     thread_local std::vector<RegionChunkPos> dirty;
+                    thread_local std::vector<RegionChunkPos> softDirty;
                     dirty.clear();
+                    softDirty.clear();
                     region->collectDirtyChunks(dirty);
 
                     // 脏 chunk 数量超过阈值时走 region 级 bake，否则按 chunk 级逐个 bake
                     if (static_cast<int>(dirty.size()) > cfg.terrain.regionBakeThreshold) {
                         rendererManager.requestBake(region, regionPos);
                     } else {
+                        // full 先入队，保证同 region 内 full 先于 soft 执行
                         for (auto& rc : dirty) {
                             auto chunk = region->getChunkData(rc);
                             if (chunk)
                                 rendererManager.requestChunkBake(
                                     chunk,
                                     ChunkPosWithDim{regionPos.x * 16 + rc.x, regionPos.z * 16 + rc.z, dimId}
+                                );
+                        }
+                        // 柔化级脏 chunk：只重做 PCF 柔化与 bevel，跳过射线采样
+                        region->collectSoftDirtyChunks(softDirty);
+                        for (auto& rc : softDirty) {
+                            auto chunk = region->getChunkData(rc);
+                            if (chunk)
+                                rendererManager.requestChunkBake(
+                                    chunk,
+                                    ChunkPosWithDim{regionPos.x * 16 + rc.x, regionPos.z * 16 + rc.z, dimId},
+                                    true
                                 );
                         }
                     }

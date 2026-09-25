@@ -9,22 +9,24 @@ jobs:
     strategy:
       matrix:
         target_type:
-          - server
           - client
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: xmake-io/github-action-setup-xmake@v1
-        # with:
-        #   xmake-version: branch@master
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             ~/AppData/Local/.xmake
           key: xmake-${{ hashFiles('xmake.lua') }}
           restore-keys: |
             xmake-
+              
+      - name: Setup LLVM
+        uses: ZhongRuoyu/setup-llvm@v0
+        with:
+          llvm-version: 22
 
       - run: |
           xmake repo -u
@@ -33,7 +35,7 @@ jobs:
           xmake f -a x64 -m release -p windows --target_type=${{ matrix.target_type }} -y
 
       - run: |
-          xmake -w -y
+          xmake -v -y 
 
       - uses: actions/upload-artifact@v7
         with:
@@ -46,12 +48,12 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - id: extract-release-notes
-        uses: ffurrer2/extract-release-notes@v3
+        uses: ffurrer2/extract-release-notes@v2
 
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@v1
         with:
           body: |
             ${{ steps.extract-release-notes.outputs.release_notes }}
@@ -65,11 +67,10 @@ jobs:
     strategy:
       matrix:
         target_type:
-          - server
           - client
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v8
         with:

@@ -141,9 +141,10 @@ BlockColor processWater(LevelChunk* chunk, int cx, int cz, int waterSurfaceY, in
 }
 
 // 基于 cameraHeight 的方块颜色获取，同时返回高度信息
-BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight, bool& outHitPlaceholder) {
+BlockColor
+getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHeight, bool& outHitPlaceholder) {
     int minY  = chunk->mMin->y;
-    int maxY  = chunk->mMax->y - 1;
+    int maxY  = chunk->mMax->y;
     int dimId = chunk->mDimension.getDimensionId();
 
     // 高度信息
@@ -222,7 +223,7 @@ BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, i
 
         if (height < cameraHeight) {
             // mHeightmap 在 cameraHeight 下方，说明上方是空气
-            for (int y = height + 1; y <= cameraHeight; ++y) {
+            for (int y = height; y <= cameraHeight; ++y) {
                 std::string name = getBlockName(y);
 
                 if (name == "minecraft:air" || name == "air") {
@@ -277,7 +278,7 @@ BlockColor getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, i
     if (isOpaque) {
         // 不透明：跳过第一段连续的不透明方块，找到第一个半透明方块
         // 或者找到空气后，在空气下方找到第一个方块
-        for (int y = cameraHeight; y >= minY; --y) {
+        for (int y = cameraHeight - 1; y >= minY; --y) {
             std::string name = getBlockName(y);
 
             if (name == "minecraft:air" || name == "air") {

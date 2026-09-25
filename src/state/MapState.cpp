@@ -54,9 +54,9 @@ void MapState::updateSmoothCamera(float deltaTime) {
 }
 
 float MapState::renderYawRad() const {
-    auto& cfg = config::getConfig().smoothCamera;
     constexpr float PI = 3.14159265f;
-    return (smoothYaw_ + cfg.renderYawOffset) * PI / 180.0f;
+    // +180° 偏置：让地图箭头朝上时对应玩家实际朝向
+    return (smoothYaw_ + 180.0f) * PI / 180.0f;
 }
 
 void MapState::resetSmoothCamera(float x, float z, float yaw) {

@@ -71,11 +71,25 @@ static BlockColor getBlockMapColor(LevelChunk* chunk, BlockSource& source, Chunk
 // 无方块可取时的 fallback 颜色（透明）
 static BlockColor getEmptyColor() { return BlockColor{0, 0, 0, 0}; }
 
+// 虚空（整列无方块）时显示的颜色：群系草地色（与地图上草地方块同色）
+static BlockColor getBiomeVoidColor(LevelChunk* chunk, ChunkWorldPos pos, int minY) {
+    ChunkBlockPos localPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z));
+    BlockPos      worldPos(chunk->mPosition->x * 16 + pos.x, minY, chunk->mPosition->z * 16 + pos.z);
+    int           argb = BiomeColorSampling::getMapGrassColor(chunk->getBiome(localPos), worldPos);
+    return BlockColor{
+        static_cast<std::uint8_t>((argb >> 16) & 0xFF),
+        static_cast<std::uint8_t>((argb >> 8) & 0xFF),
+        static_cast<std::uint8_t>(argb & 0xFF),
+        255
+    };
+}
+
 // 判断方块是否不透明（材质为固体即视为不透明，替代原 block_color.json 的 alpha 查表）
 static bool isBlockOpaque(Block const& block) { return block.getMaterial().mSolid; }
 
 // 处理水的特殊效果（透明水）
-BlockColor processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, int waterSurfaceY, int minY) {
+BlockColor
+processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, int waterSurfaceY, int minY, bool& outHitPlaceholder) {
     // 获取水颜色（含群系染色）
     BlockColor waterColor =
         getBlockMapColor(chunk, source, {static_cast<uchar>(cx), static_cast<uchar>(cz)}, waterSurfaceY);
@@ -92,6 +106,8 @@ BlockColor processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, 
         );
         Block const&       solidBlock = chunk->getBlock(solidPos);
         std::string const& solidName  = solidBlock.getTypeName();
+        // 水下方块是占位符（子区块未加载完）时也置标记，让上层快速回扫
+        if (solidName == "minecraft:client_request_placeholder_block") outHitPlaceholder = true;
         if (solidName != "minecraft:water" && solidName != "minecraft:air" && solidName != "air") {
             foundSolid = true;
             break;
@@ -157,6 +173,9 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
 
     auto blockColorAt = [&](int y) -> BlockColor { return getBlockMapColor(chunk, source, pos, y); };
 
+    // 虚空（整列无方块）：显示群系颜色
+    auto voidColor = [&]() -> BlockColor { return getBiomeVoidColor(chunk, pos, minY); };
+
     // 如果 cameraHeight 高于维度最高高度，使用原有表面查找逻辑
     if (cameraHeight > maxY) {
         int height = surfaceHeight;
@@ -171,12 +190,12 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
                     std::string surfaceName = getBlockName(y - 1);
 
                     if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-                        return processWater(chunk, source, pos.x, pos.z, y - 1, minY);
+                        return processWater(chunk, source, pos.x, pos.z, y - 1, minY, outHitPlaceholder);
                     }
 
                     return blockColorAt(y - 1);
                 }
-                return getEmptyColor();
+                return voidColor();
             }
         }
 
@@ -184,7 +203,7 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
         std::string surfaceName = getBlockName(maxY);
 
         if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-            return processWater(chunk, source, pos.x, pos.z, maxY, minY);
+            return processWater(chunk, source, pos.x, pos.z, maxY, minY, outHitPlaceholder);
         }
 
         return blockColorAt(maxY);
@@ -208,12 +227,12 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
 
                         // 透明水效果
                         if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-                            return processWater(chunk, source, pos.x, pos.z, y - 1, minY);
+                            return processWater(chunk, source, pos.x, pos.z, y - 1, minY, outHitPlaceholder);
                         }
 
                         return blockColorAt(y - 1);
                     }
-                    return getEmptyColor();
+                    return voidColor();
                 }
             }
 
@@ -221,7 +240,7 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
             std::string surfaceName = getBlockName(cameraHeight);
 
             if (config::getConfig().terrain.enableTransparentWater && surfaceName == "minecraft:water") {
-                return processWater(chunk, source, pos.x, pos.z, cameraHeight, minY);
+                return processWater(chunk, source, pos.x, pos.z, cameraHeight, minY, outHitPlaceholder);
             }
 
             return blockColorAt(cameraHeight);
@@ -233,12 +252,12 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
                 if (name != "minecraft:air" && name != "air") {
                     // 找到非空气方块
                     if (config::getConfig().terrain.enableTransparentWater && name == "minecraft:water") {
-                        return processWater(chunk, source, pos.x, pos.z, y, minY);
+                        return processWater(chunk, source, pos.x, pos.z, y, minY, outHitPlaceholder);
                     }
                     return blockColorAt(y);
                 }
             }
-            return getEmptyColor();
+            return voidColor();
         }
     }
 
@@ -259,19 +278,19 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
                     if (airBelowName != "minecraft:air" && airBelowName != "air") {
                         // 找到空气下方的第一个方块
                         if (config::getConfig().terrain.enableTransparentWater && airBelowName == "minecraft:water") {
-                            return processWater(chunk, source, pos.x, pos.z, y2, minY);
+                            return processWater(chunk, source, pos.x, pos.z, y2, minY, outHitPlaceholder);
                         }
                         return blockColorAt(y2);
                     }
                 }
-                return getEmptyColor();
+                return voidColor();
             }
 
             bool currentOpaque = isBlockOpaque(getBlockAt(y));
             if (!currentOpaque) {
                 // 找到半透明方块，直接显示
                 if (config::getConfig().terrain.enableTransparentWater && name == "minecraft:water") {
-                    return processWater(chunk, source, pos.x, pos.z, y, minY);
+                    return processWater(chunk, source, pos.x, pos.z, y, minY, outHitPlaceholder);
                 }
                 return blockColorAt(y);
             }
@@ -281,7 +300,7 @@ getTerrainPixelAtCameraHeight(LevelChunk* chunk, ChunkWorldPos pos, int cameraHe
     } else {
         // 半透明：直接显示这个方块
         if (config::getConfig().terrain.enableTransparentWater && cameraName == "minecraft:water") {
-            return processWater(chunk, source, pos.x, pos.z, cameraHeight, minY);
+            return processWater(chunk, source, pos.x, pos.z, cameraHeight, minY, outHitPlaceholder);
         }
         return blockColorAt(cameraHeight);
     }

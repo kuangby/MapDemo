@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/pos/ChunkPosWithDim.h"
+#include "data/pos/ChunkWorldPos.h"
 
 #include <ll/api/data/KeyValueDB.h>
 #include <mc/world/level/BlockSource.h>
@@ -54,10 +55,16 @@ public:
     [[nodiscard]] std::uint64_t totalFrames() const { return totalFrames_; }
 
     // 扫描单个 chunk 并写入缓存（供周期调度与方块变化触发的即时重扫使用）
-    // outHitPlaceholder：扫描过程中遇到 client_request_placeholder_block 时置 true，
-    // 此时不更新 lastScanFrame，调用方应按短延迟安排重扫
-    // 返回 false 表示 chunk 未加载，本次未扫描
+    // outHitPlaceholder：存在仍为占位符的子区块，或扫描过程中遇到
+    // client_request_placeholder_block 时置 true，此时不更新 lastScanFrame，
+    // 调用方应按短延迟安排重扫
+    // 返回 false 表示本次未扫描（chunk 未加载，或含有占位子区块）
     bool scanChunk(BlockSource* region, const ChunkPosWithDim& key, bool& outHitPlaceholder) const;
+
+    // 只扫描 chunk 内的单个 XZ 列（方块变化触发，避免整 chunk 重扫）
+    // 返回 false 表示 chunk 未加载或基础数据尚未初始化，调用方应回退到整 chunk 扫描
+    bool scanColumn(BlockSource* region, const ChunkPosWithDim& key, ChunkWorldPos pos, bool& outHitPlaceholder)
+        const;
 
 private:
     TerrainScanner() = default;

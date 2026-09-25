@@ -11,8 +11,9 @@ class BlockSource;
 
 namespace map_demo {
 
-// 处理水的特殊效果（透明水）
-BlockColor processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, int waterSurfaceY, int minY);
+// 处理水的特殊效果（透明水）；水下查找遇到占位符方块时置 outHitPlaceholder 触发快速回扫
+BlockColor
+processWater(LevelChunk* chunk, BlockSource& source, int cx, int cz, int waterSurfaceY, int minY, bool& outHitPlaceholder);
 
 // 单个像素的地形信息
 struct TerrainPixelInfo {

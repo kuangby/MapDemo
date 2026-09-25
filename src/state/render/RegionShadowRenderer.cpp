@@ -41,7 +41,7 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
     }
 
     auto& cfg = config::getConfig().terrain.shadow;
-    if (cfg.transparentWater) applyWaterOverlay();
+    if (config::getConfig().terrain.enableTransparentWater) applyWaterOverlay();
 
     heightQueryCount = 0;
     heightQueryMiss  = 0;

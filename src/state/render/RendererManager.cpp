@@ -161,47 +161,4 @@ void RendererManager::workerLoop() {
     }
 }
 
-void notifyShadowConfigChanged() {
-    auto& shadow = config::getConfig().terrain.shadow;
-
-    struct ShadowSnapshot {
-        int   renderStyle;
-        int   renderScale;
-        int   pcfRadius;
-        int   shadowLevel;
-        float lightAzimuth;
-        float lightZenith;
-        bool  transparentWater;
-
-        [[nodiscard]] bool operator==(const ShadowSnapshot&) const = default;
-    };
-
-    static ShadowSnapshot last{
-        shadow.renderStyle,
-        shadow.renderScale,
-        shadow.pcfRadius,
-        shadow.shadowLevel,
-        shadow.lightAzimuth,
-        shadow.lightZenith,
-        shadow.transparentWater
-    };
-
-    ShadowSnapshot current{
-        shadow.renderStyle,
-        shadow.renderScale,
-        shadow.pcfRadius,
-        shadow.shadowLevel,
-        shadow.lightAzimuth,
-        shadow.lightZenith,
-        shadow.transparentWater
-    };
-
-    if (current == last) return;
-    last = current;
-
-    auto& state = MapState::getInstance();
-    if (!state.hasPlayer()) return;
-    MapCacheManager::getInstance().markAllDirty(state.dimensionId());
-}
-
 } // namespace map_demo

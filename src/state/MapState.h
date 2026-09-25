@@ -38,8 +38,7 @@ public:
 
     [[nodiscard]] bool               hasPlayer() const { return player_.hasPlayer; }
 
-    bool  showMiniMap{true};
-    float backgroundAlpha{1.0f}; // 0.0 ~ 1.0
+    bool showMiniMap{true};
 
     // 大地图状态
     bool  showWorldMap{false};

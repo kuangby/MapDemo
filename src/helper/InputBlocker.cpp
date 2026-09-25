@@ -8,6 +8,8 @@
 #include <ll/api/event/input/MouseInputEvent.h>
 #include <mc/client/game/ClientInstance.h>
 
+#include <windows.h>
+
 
 namespace map_demo {
 
@@ -30,20 +32,36 @@ void InputBlocker::registerListeners() {
         bool  isDown    = event.isDown();
         int   toggleKey = config::getConfig().worldMap.toggleKey;
 
+        // Ctrl+M 隐藏/显示小地图，单独 M 开/关大地图
+        bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+
         if (!state.showWorldMap) {
             if (keyCode == toggleKey) {
                 // 仅在游戏捕获鼠标（即不在聊天栏/其他 UI）时响应，避免打字时触发
                 bool mouseGrabbed = s_clientInstance && s_clientInstance->getMouseGrabbed();
                 if (isDown && mouseGrabbed) {
                     event.cancel();
-                    openWorldMap();
+                    if (ctrlDown) {
+                        state.showMiniMap = !state.showMiniMap;
+                    } else {
+                        openWorldMap();
+                    }
                 }
             }
             return;
         }
         // 大地图打开：拦截一切按键
         event.cancel();
-        if (isDown && (keyCode == toggleKey || keyCode == kEscapeKey)) closeWorldMap();
+        if (!isDown) return;
+        if (keyCode == toggleKey) {
+            if (ctrlDown) {
+                state.showMiniMap = !state.showMiniMap;
+            } else {
+                closeWorldMap();
+            }
+        } else if (keyCode == kEscapeKey) {
+            closeWorldMap();
+        }
     });
 
     s_mouseListener = bus.emplaceListener<ll::event::MouseInputEvent>([](ll::event::MouseInputEvent& event) {

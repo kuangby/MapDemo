@@ -188,21 +188,21 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
     outHitPlaceholder = false;
 
-    // 根据维度获取 cameraHeight
+    // 子区块预检：任何一个子区块仍是占位符（服务器数据未到达）就放弃整个 chunk，
+    // 由调用方按短延迟重新入队，避免扫出半黑半真的混合数据
+    for (const auto& subChunk : chunk->mSubChunks.get()) {
+        if (subChunk.isPlaceHolderSubChunk()) {
+            outHitPlaceholder = true;
+            return false;
+        }
+    }
+
+    // 扫描相机高度（Y 坐标）：主世界 320，地狱 127（基岩层顶），末地 256
     int cameraHeight;
     switch (key.dimId) {
-    case 0:
-        cameraHeight = config::getConfig().terrain.cameraHeight.overworld;
-        break;
-    case 1:
-        cameraHeight = config::getConfig().terrain.cameraHeight.nether;
-        break;
-    case 2:
-        cameraHeight = config::getConfig().terrain.cameraHeight.end;
-        break;
-    default:
-        cameraHeight = config::getConfig().terrain.cameraHeight.overworld;
-        break;
+    case 1:  cameraHeight = 127; break;
+    case 2:  cameraHeight = 256; break;
+    default: cameraHeight = 320; break;
     }
 
     auto regionData = MapCacheManager::getInstance().getOrCreateRegion(RegionPos(key));
@@ -295,6 +295,89 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
             key.dimId,
             azimuth_rad,
             zenith_rad
+        );
+        markAffectedChunksDirty(std::unordered_set<ChunkPosWithDim>(affected.begin(), affected.end()));
+    }
+
+    return true;
+}
+
+bool TerrainScanner::scanColumn(
+    BlockSource*           region,
+    const ChunkPosWithDim& key,
+    ChunkWorldPos          pos,
+    bool&                  outHitPlaceholder
+) const {
+    auto chunk = region->getChunk(key.x, key.z);
+    if (!isChunkLoaded(chunk)) return false;
+
+    outHitPlaceholder = false;
+
+    // 扫描相机高度（Y 坐标）：主世界 320，地狱 127（基岩层顶），末地 256
+    int cameraHeight;
+    switch (key.dimId) {
+    case 1:  cameraHeight = 127; break;
+    case 2:  cameraHeight = 256; break;
+    default: cameraHeight = 320; break;
+    }
+
+    auto regionData = MapCacheManager::getInstance().getOrCreateRegion(RegionPos(key));
+    auto chunkData  = regionData->getOrCreateChunkData(RegionChunkPos(key));
+
+    int minY      = region->mMinHeight;
+    int idx       = pos.z * 16 + pos.x;
+    int heightVal = chunk->mHeightmap.get()[idx].mVal + minY;
+    int solidVal  = chunk->mRenderHeightmap.get()[idx].mVal + minY;
+
+    bool changed       = false;
+    bool heightChanged = false;
+    int  oldHeight     = 0;
+
+    {
+        std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
+
+        // 基础数据尚未整体扫描过：单列更新无意义，交给整 chunk 扫描
+        if (!chunkData->loadChunkBaseData) return false;
+
+        auto color = getTerrainPixelAtCameraHeight(chunk, pos, cameraHeight, outHitPlaceholder);
+
+        auto& currentBlockData = chunkData->blocksData[pos.z][pos.x];
+        oldHeight              = currentBlockData.height;
+
+        if (currentBlockData.color != color) {
+            currentBlockData.color = color;
+            changed                = true;
+        }
+        if (currentBlockData.height != heightVal) {
+            currentBlockData.height = static_cast<std::int16_t>(heightVal);
+            changed                 = true;
+            heightChanged           = true;
+        }
+        if (currentBlockData.solidHeight != solidVal) {
+            currentBlockData.solidHeight = static_cast<std::int16_t>(solidVal);
+            changed                      = true;
+        }
+        // 高度范围只扩不缩：收缩需要整扫（周期重扫会修正），
+        // 偏大的范围只会让阴影剔除更保守，不会错剔除
+        if (heightVal < chunkData->minHeight) chunkData->minHeight = heightVal;
+        if (heightVal > chunkData->maxHeight) chunkData->maxHeight = heightVal;
+    }
+
+    if (changed) {
+        chunkData->markBakedDirty();
+        regionData->markBakedDirty();
+    }
+
+    // 该列高度变化会影响下游阴影：以单列范围计算受影响 chunk 并标脏
+    if (heightChanged) {
+        const float deg2rad   = 3.1415926535f / 180.0f;
+        auto&       shadowCfg = config::getConfig().terrain.shadow;
+        auto        affected  = getAffectedChunk(
+            oldHeight,
+            heightVal,
+            WorldPos(key.x * 16 + pos.x, key.z * 16 + pos.z, key.dimId),
+            shadowCfg.lightAzimuth * deg2rad,
+            shadowCfg.lightZenith * deg2rad
         );
         markAffectedChunksDirty(std::unordered_set<ChunkPosWithDim>(affected.begin(), affected.end()));
     }

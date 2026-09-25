@@ -148,12 +148,7 @@ void MiniMapRenderer::render() {
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
     ImVec2      center(cx, cy);
 
-    ImU32 bgColor = toImCol32(mmc.backgroundColor);
-    {
-        std::uint8_t a = static_cast<std::uint8_t>(255 * state.backgroundAlpha);
-        bgColor        = (bgColor & 0x00FFFFFF) | (a << IM_COL32_A_SHIFT);
-    }
-    drawList->AddCircleFilled(center, radius, bgColor, mmc.circleSegments);
+    drawList->AddCircleFilled(center, radius, toImCol32(mmc.backgroundColor), 64);
 
     float renderRadiusBlocks = static_cast<float>(mmc.radiusChunks * 16);
     float scale              = radius / renderRadiusBlocks;
@@ -277,7 +272,7 @@ void MiniMapRenderer::render() {
     ImU32 chunkLineColor    = toImCol32(mmc.chunkLineColor);
     ImU32 currentChunkColor = toImCol32(mmc.currentChunkColor);
 
-    float lineClipRadius = radius - mmc.lineClipInset;
+    float lineClipRadius = radius - 1.0f;
     auto  gridLines      = ChunkManager::getGridLines(centerChunk.x, centerChunk.z, mmc.radiusChunks);
 
     ImVec2 a, b;
@@ -321,15 +316,15 @@ void MiniMapRenderer::render() {
     ImU32 arrowFill    = toImCol32(mmc.playerArrowFillColor);
 
     drawList->AddTriangleFilled(
-        rotate(0.0f, -mmc.arrow.length),
-        rotate(-mmc.arrow.halfWidth, mmc.arrow.length),
-        rotate(mmc.arrow.halfWidth, mmc.arrow.length),
+        rotate(0.0f, -10.0f),
+        rotate(-7.0f, 10.0f),
+        rotate(7.0f, 10.0f),
         arrowOutline
     );
     drawList->AddTriangleFilled(
-        rotate(0.0f, -mmc.arrow.innerLength),
-        rotate(-mmc.arrow.innerWidth, mmc.arrow.innerLength),
-        rotate(mmc.arrow.innerWidth, mmc.arrow.innerLength),
+        rotate(0.0f, -8.0f),
+        rotate(-5.0f, 8.0f),
+        rotate(5.0f, 8.0f),
         arrowFill
     );
 
@@ -347,7 +342,7 @@ void MiniMapRenderer::render() {
     drawList->AddText(ImVec2(textPos.x + 1.0f, textPos.y + 1.0f), toImCol32(mmc.coordShadowColor), coordBuf);
     drawList->AddText(textPos, toImCol32(mmc.coordTextColor), coordBuf);
 
-    drawList->AddCircle(center, radius, toImCol32(mmc.borderColor), mmc.circleSegments, mmc.borderThickness);
+    drawList->AddCircle(center, radius, toImCol32(mmc.borderColor), 64, mmc.borderThickness);
 }
 
 } // namespace map_demo

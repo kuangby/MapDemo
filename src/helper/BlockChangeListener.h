@@ -15,7 +15,6 @@
 #include "mc/world/level/block/Block.h"
 
 #include <cmath>
-#include <unordered_set>
 
 
 namespace map_demo {
@@ -42,35 +41,22 @@ public:
         if (!region || !region->hasEverBaked()) return;
 
         auto chunkPos = ChunkPosWithDim(worldPos);
-        auto chunk    = mapCacheManager.getChunk(chunkPos);
 
-        bool unuse;
-        TerrainScanner::getInstance().scanChunk(&source, chunkPos, unuse);
+        // 只重扫变化的这一列；chunk 基础数据未初始化或命中占位符时回退整 chunk 扫描
+        bool hitPlaceholder = false;
+        // if (!TerrainScanner::getInstance().scanColumn(&source, chunkPos, ChunkWorldPos(worldPos), hitPlaceholder)
+        //     || hitPlaceholder) {
+        //     bool unused;
+        //     TerrainScanner::getInstance().scanChunk(&source, chunkPos, unused);
+        // }
+
+        TerrainScanner::getInstance().scanChunk(&source, chunkPos, hitPlaceholder);
     }
-
-    // tick 末统一处理本 tick 收集到的受影响 chunk
-    static void drainPendingChunks() {
-        if (pendingChunks_.empty()) return;
-        auto& mapCacheManager = MapCacheManager::getInstance();
-        for (auto& chunkPos : pendingChunks_) {
-            auto region = mapCacheManager.getRegion(RegionPos(chunkPos));
-            if (!region || !region->hasEverBaked()) continue;
-            auto chunk = region->getChunkData(RegionChunkPos(chunkPos));
-            if (chunk) chunk->markBakedDirty();
-            region->markBakedDirty();
-        }
-        pendingChunks_.clear();
-    }
-
-    static void clearPendingChunks() { pendingChunks_.clear(); }
 
 public:
     [[nodiscard]] static BlockChangeListener& getInstance() {
         static BlockChangeListener instance;
         return instance;
     }
-
-private:
-    inline static std::unordered_set<ChunkPosWithDim> pendingChunks_{};
 };
 } // namespace map_demo

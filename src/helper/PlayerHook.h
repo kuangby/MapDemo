@@ -18,6 +18,7 @@
 #include "config/Config.h"
 #include "data/cache/MapCacheManager.h"
 #include "data/cache/WorldMapCacheManager.h"
+#include "helper/DX11Hook.h"
 #include "helper/InputBlocker.h"
 #include "mod/MapDemo.h"
 #include "render/WorldMapRenderer.h"
@@ -106,6 +107,31 @@ LL_TYPE_INSTANCE_HOOK(
                 );
             }
         }
+
+        // 大地图打开期间渲染线程每帧 ClipCursor(nullptr) 解除锁定；而游戏抓取鼠标时
+        // 只是每帧把光标回中，快速转视角时光标可能在一帧内漂出窗口（此时点击会切走焦点）。
+        // 参考 ChiyanMap：抓取状态（光标隐藏）下把光标钳制在客户区中心 2x2 死区内
+        if (!MapState::getInstance().showWorldMap) {
+            if (HWND hwnd = DX11Hook::getHwnd(); hwnd && GetForegroundWindow() == hwnd) {
+                CURSORINFO ci{sizeof(CURSORINFO)};
+                if (GetCursorInfo(&ci)) {
+                    if (ci.flags == 0) {
+                        RECT clientRect;
+                        GetClientRect(hwnd, &clientRect);
+                        POINT ptCenter{
+                            (clientRect.right - clientRect.left) / 2,
+                            (clientRect.bottom - clientRect.top) / 2
+                        };
+                        ClientToScreen(hwnd, &ptCenter);
+                        RECT centerRect{ptCenter.x - 1, ptCenter.y - 1, ptCenter.x + 1, ptCenter.y + 1};
+                        ClipCursor(&centerRect);
+                    } else {
+                        // 背包/暂停菜单等原生 UI 状态（系统光标可见），放开钳制
+                        ClipCursor(nullptr);
+                    }
+                }
+            }
+        }
     } else {
         if (s_wasInWorld) {
             if (s_listenerSource) {
@@ -122,10 +148,6 @@ LL_TYPE_INSTANCE_HOOK(
             TerrainScanner::getInstance().clearState();
             s_wasInWorld = false;
         }
-    }
-
-    if (isPlayerInWorld) {
-        notifyShadowConfigChanged();
     }
 
     return result;

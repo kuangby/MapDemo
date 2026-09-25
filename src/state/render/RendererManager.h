@@ -63,7 +63,4 @@ private:
     bool                               stop_{false};
 };
 
-// 阴影相关配置变化时调用；有变化则对当前维度全量 mark dirty 触发 rebake
-void notifyShadowConfigChanged();
-
 } // namespace map_demo

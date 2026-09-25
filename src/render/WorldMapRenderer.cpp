@@ -221,7 +221,7 @@ void WorldMapRenderer::render() {
     drawList->AddRectFilled(
         ImVec2(0.0f, 0.0f),
         ImVec2(screenW, screenH),
-        IM_COL32(16, 16, 20, static_cast<int>(255.0f * cfg.backgroundAlpha))
+        IM_COL32(16, 16, 20, 255)
     );
 
     float  zoom    = std::clamp(state.worldMapZoom, cfg.minZoom, cfg.maxZoom);

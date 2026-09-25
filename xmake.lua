@@ -16,7 +16,9 @@ end
 target("MapDemo") -- Change this to your mod name.
     add_rules("@levibuildscript/linkrule")
     add_rules("@levibuildscript/modpacker")
+    add_packages("levilamina", "imgui", "nlohmann_json")
     if is_plat("windows") then
+        add_syslinks("d3d11", "d3d12", "dxgi", "user32")
         add_defines("NOMINMAX", "UNICODE", "_AMD64_")
         set_exceptions("none") -- To avoid conflicts with /EHa.
         add_cxflags( "/EHa", "/utf-8", "/W4", "/w44265", "/w44289", "/w44296", "/w45263", "/w44738", "/w45204")

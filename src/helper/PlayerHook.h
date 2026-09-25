@@ -17,7 +17,10 @@
 #include "BlockChangeListener.h"
 #include "config/Config.h"
 #include "data/cache/MapCacheManager.h"
+#include "data/cache/WorldMapCacheManager.h"
+#include "helper/InputBlocker.h"
 #include "mod/MapDemo.h"
+#include "render/WorldMapRenderer.h"
 #include "state/MapState.h"
 #include "state/TerrainScanner.h"
 #include "state/render/RendererManager.h"
@@ -58,6 +61,8 @@ LL_TYPE_INSTANCE_HOOK(
             s_wasInWorld = true;
             dimId        = playerDimId;
 
+            InputBlocker::setClientInstance(this);
+
             s_listenerSource = &player->getDimensionBlockSource();
             s_listenerSource->addListener(BlockChangeListener::getInstance());
 
@@ -69,6 +74,9 @@ LL_TYPE_INSTANCE_HOOK(
                 std::filesystem::create_directories(cachePath);
                 bool cacheOk = MapCacheManager::getInstance().initializeDiskCache(cachePath);
                 MapDemo::getInstance().getSelf().getLogger().debug("Terrain disk cache init result: {}", cacheOk);
+
+                // 大地图缓存：本地存档存 getWorldDataDir，远程服务器按 ip+端口+种子 存 getDataDir/servers 下
+                WorldMapCacheManager::getInstance().onEnterWorld(this, player);
             }
         } else if (playerDimId != dimId) {
             dimId = playerDimId;
@@ -108,6 +116,10 @@ LL_TYPE_INSTANCE_HOOK(
                 s_listenerSource->removeListener(BlockChangeListener::getInstance());
                 s_listenerSource = nullptr;
             }
+            if (MapState::getInstance().showWorldMap) InputBlocker::closeWorldMap();
+            WorldMapCacheManager::getInstance().onLeaveWorld();
+            WorldMapRenderer::getInstance().requestClearTextures();
+            InputBlocker::setClientInstance(nullptr);
             MapState::getInstance().clearPlayer();
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();

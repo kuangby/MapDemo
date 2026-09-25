@@ -41,6 +41,12 @@ public:
     bool  showMiniMap{true};
     float backgroundAlpha{1.0f}; // 0.0 ~ 1.0
 
+    // 大地图状态
+    bool  showWorldMap{false};
+    float worldMapOffsetX{0.0f}; // 相对平滑相机的偏移（方块）
+    float worldMapOffsetZ{0.0f};
+    float worldMapZoom{1.0f}; // 像素/方块
+
 private:
     MapState() = default;
 

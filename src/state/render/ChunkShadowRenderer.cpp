@@ -4,6 +4,7 @@
 #include "config/Config.h"
 #include "data/BlockColor.h"
 #include "data/BlockDataBase.h"
+#include "data/cache/WorldMapCacheManager.h"
 #include "data/pos/ChunkPosWithDim.h"
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/WorldPos.h"
@@ -66,6 +67,11 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data) {
             heightQueryMiss,
             shadowedSubpixels
         );
+    }
+
+    // bake 结束、写回之前：把 bake 结果写入大地图 region 缓存（当前为 bake 工作线程，缓存内部加锁）
+    if (handlingChunk) {
+        WorldMapCacheManager::getInstance().updateFromChunkBake(handlingChunkPos, *handlingChunk);
     }
 
     {

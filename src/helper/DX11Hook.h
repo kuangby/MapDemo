@@ -33,4 +33,8 @@ bool init();
 void shutdown();
 GraphicsAPI getCurrentAPI();
 
+// 供 WorldMapRenderer 创建/更新 region 纹理（渲染线程调用）
+ID3D11Device*        getDevice();
+ID3D11DeviceContext* getContext();
+
 } // namespace map_demo::DX11Hook

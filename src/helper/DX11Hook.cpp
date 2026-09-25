@@ -3,6 +3,8 @@
 #include "config/Config.h"
 #include "mod/MapDemo.h"
 #include "render/MiniMapRenderer.h"
+#include "render/WorldMapRenderer.h"
+#include "state/MapState.h"
 
 #include <backends/imgui_impl_dx11.h>
 #include <imgui.h>
@@ -189,6 +191,8 @@ void renderImGuiFrame(ID3D11RenderTargetView* rtv) {
     ImGui::NewFrame();
 
     MiniMapRenderer::getInstance().render();
+    // 大地图最后绘制：全屏不透明背景会盖住小地图（同时小地图的 bake 调度仍在运行）
+    WorldMapRenderer::getInstance().render();
 
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -439,5 +443,9 @@ void shutdown() {
 }
 
 GraphicsAPI getCurrentAPI() { return g_currentAPI; }
+
+ID3D11Device* getDevice() { return g_pd3d11Device; }
+
+ID3D11DeviceContext* getContext() { return g_pd3d11DeviceContext; }
 
 } // namespace map_demo::DX11Hook

@@ -1,7 +1,9 @@
 #include "mod/MapDemo.h"
 
 #include "config/Config.h"
+#include "data/cache/WorldMapCacheManager.h"
 #include "helper/HookRegistry.h"
+#include "helper/InputBlocker.h"
 #include "helper/ShadowDebugLogger.h"
 #include "ll/api/mod/RegisterHelper.h"
 #include "state/BlockColorManager.h"
@@ -39,11 +41,14 @@ bool MapDemo::load() {
 
 bool MapDemo::enable() {
     getSelf().getLogger().debug("Enabling...");
+    InputBlocker::registerListeners();
     return true;
 }
 
 bool MapDemo::disable() {
     getSelf().getLogger().debug("Disabling...");
+    InputBlocker::unregisterListeners();
+    WorldMapCacheManager::getInstance().shutdown();
     unregisterAllHooks();
     RendererManager::getInstance().shutdown();
     TerrainScanner::getInstance().shutdown();

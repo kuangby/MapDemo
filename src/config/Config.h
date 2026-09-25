@@ -163,6 +163,28 @@ struct TerrainConfig {
     const char* biomeColorPath = "resources/colors/biome_color.json";
 };
 
+// 大地图配置
+struct WorldMapConfig {
+    // 打开/关闭大地图的按键（Win32 虚拟键码，默认 M）
+    int toggleKey = 0x4D;
+
+    // 缩放范围（像素/方块）
+    float minZoom = 0.2f;
+    float maxZoom = 40.0f;
+
+    // 滚轮每次滚动的缩放倍率
+    float zoomStep = 1.15f;
+
+    // 每帧最多新建的 region 纹理数量
+    int maxNewTexturesPerFrame = 4;
+
+    // VRAM 回收：超过该帧数未被使用的 region 纹理将被释放
+    int textureIdleFrames = 600;
+
+    // 背景不透明度（0.0 ~ 1.0）
+    float backgroundAlpha = 1.0f;
+};
+
 // 总配置
 struct Config {
     int version = 1;
@@ -172,6 +194,7 @@ struct Config {
     MiniMapConfig      miniMap;
     SmoothCameraConfig smoothCamera;
     TerrainConfig      terrain;
+    WorldMapConfig     worldMap;
 };
 
 // 全局配置实例

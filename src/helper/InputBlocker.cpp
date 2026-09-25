@@ -1,7 +1,6 @@
 #include "helper/InputBlocker.h"
 
 #include "config/Config.h"
-#include "mod/MapDemo.h"
 #include "state/MapState.h"
 
 #include <ll/api/event/EventBus.h>
@@ -63,8 +62,6 @@ void InputBlocker::registerListeners() {
         }
         event.cancel();
     });
-
-    MapDemo::getInstance().getSelf().getLogger().debug("InputBlocker: listeners registered");
 }
 
 void InputBlocker::unregisterListeners() {

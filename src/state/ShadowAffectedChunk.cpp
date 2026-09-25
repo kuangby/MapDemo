@@ -3,7 +3,6 @@
 #include "data/cache/MapCacheManager.h"
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/RegionPos.h"
-#include "helper/ShadowDebugLogger.h"
 
 #include <algorithm>
 #include <cmath>
@@ -72,21 +71,6 @@ void traceRay(
                 //    => 该 chunk 在新旧状态下都不在阴影中
                 if (static_cast<float>(higherHeight) - minDistance * tanZenith
                     < static_cast<float>(chunkData->minHeight)) {
-                    ShadowDebugLogger::getInstance().log(
-                        "[traceRay] origin=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
-                        " higher={} lower={} -> SKIP_LIT, ray terminated",
-                        originX,
-                        originZ,
-                        curChunkX,
-                        curChunkZ,
-                        pos.dimId,
-                        minDistance,
-                        maxDistance,
-                        chunkData->minHeight,
-                        chunkData->maxHeight,
-                        higherHeight,
-                        lowerHeight
-                    );
                     break;
                 }
 
@@ -94,48 +78,9 @@ void traceRay(
                 //    => 该 chunk 在新旧状态下都被完全阴影覆盖，状态无变化
                 if (static_cast<float>(lowerHeight) - maxDistance * tanZenith
                     >= static_cast<float>(chunkData->maxHeight)) {
-                    ShadowDebugLogger::getInstance().log(
-                        "[traceRay] origin=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
-                        " higher={} lower={} -> SKIP_FULL_SHADOW",
-                        originX,
-                        originZ,
-                        curChunkX,
-                        curChunkZ,
-                        pos.dimId,
-                        minDistance,
-                        maxDistance,
-                        chunkData->minHeight,
-                        chunkData->maxHeight,
-                        higherHeight,
-                        lowerHeight
-                    );
                     continue;
                 }
-                ShadowDebugLogger::getInstance().log(
-                    "[traceRay] origin=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
-                    " higher={} lower={} -> AFFECTED",
-                    originX,
-                    originZ,
-                    curChunkX,
-                    curChunkZ,
-                    pos.dimId,
-                    minDistance,
-                    maxDistance,
-                    chunkData->minHeight,
-                    chunkData->maxHeight,
-                    higherHeight,
-                    lowerHeight
-                );
                 out.emplace_back(chunk);
-            } else {
-                ShadowDebugLogger::getInstance().log(
-                    "[traceRay] origin=({},{}) chunk=({},{}) dim={} -> SKIP_UNSCANNED",
-                    originX,
-                    originZ,
-                    curChunkX,
-                    curChunkZ,
-                    pos.dimId
-                );
             }
         }
 
@@ -177,21 +122,6 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
     float zenith_rad
 ) {
     float tanZenith = std::tan(zenith_rad);
-
-    ShadowDebugLogger::getInstance().log(
-        "[getAffectedChunksForRect] rect=[({},{})-({},{})] dim={} higher={} lower={} azimuth={:.2f} zenith={:.2f}"
-        " tanZenith={:.3f}",
-        x0,
-        z0,
-        x1,
-        z1,
-        dimId,
-        higherHeight,
-        lowerHeight,
-        azimuth_rad,
-        zenith_rad,
-        tanZenith
-    );
 
     std::vector<ChunkPosWithDim>        res;
     std::unordered_set<ChunkPosWithDim> visited;
@@ -305,39 +235,9 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
                            > static_cast<float>(chunkData->minHeight)
                     && static_cast<float>(lowerHeight) - maxDistance * tanZenith
                            < static_cast<float>(chunkData->maxHeight);
-        ShadowDebugLogger::getInstance().log(
-            "[farChunk] end=({},{}) chunk=({},{}) dim={} minDist={:.1f} maxDist={:.1f} chunkY=[{},{}]"
-            " higher={} lower={} scanned={} -> {}",
-            endX,
-            endZ,
-            farChunk.x,
-            farChunk.z,
-            dimId,
-            minDistance,
-            maxDistance,
-            chunkData ? chunkData->minHeight : 0,
-            chunkData ? chunkData->maxHeight : 0,
-            higherHeight,
-            lowerHeight,
-            chunkData && chunkData->loadChunkBaseData,
-            affected ? "AFFECTED" : "SKIPPED"
-        );
         if (affected) {
             res.emplace_back(farChunk);
         }
-    }
-
-    if (ShadowDebugLogger::getInstance().isEnabled()) {
-        std::string list;
-        for (auto& c : res) {
-            fmt::format_to(std::back_inserter(list), "({},{}) ", c.x, c.z);
-        }
-        ShadowDebugLogger::getInstance().log(
-            "[getAffectedChunksForRect] dim={} result {} chunks: {}",
-            dimId,
-            res.size(),
-            list
-        );
     }
 
     return res;
@@ -363,33 +263,15 @@ void markAffectedChunksDirty(const std::unordered_set<ChunkPosWithDim>& chunks) 
     for (auto& pos : chunks) {
         auto region = mapCacheManager.getRegion(RegionPos(pos));
         if (!region) {
-            ShadowDebugLogger::getInstance().log(
-                "[markDirty] chunk=({},{}) dim={} -> SKIP_NO_REGION",
-                pos.x,
-                pos.z,
-                pos.dimId
-            );
             continue;
         }
         auto chunk = region->getChunkData(RegionChunkPos(pos));
         // 跳过未加载数据的 chunk：首次扫描时会全量 bake，无需标脏
         if (!chunk || !chunk->loadChunkBaseData) {
-            ShadowDebugLogger::getInstance().log(
-                "[markDirty] chunk=({},{}) dim={} -> SKIP_UNLOADED",
-                pos.x,
-                pos.z,
-                pos.dimId
-            );
             continue;
         }
         chunk->markBakedDirty();
         region->markBakedDirty();
-        ShadowDebugLogger::getInstance().log(
-            "[markDirty] chunk=({},{}) dim={} -> MARKED",
-            pos.x,
-            pos.z,
-            pos.dimId
-        );
     }
 }
 

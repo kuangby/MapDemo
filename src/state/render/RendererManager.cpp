@@ -2,20 +2,15 @@
 
 #include "config/Config.h"
 #include "data/cache/MapCacheManager.h"
-#include "helper/ShadowDebugLogger.h"
-#include "mod/MapDemo.h"
 #include "state/MapState.h"
 #include "state/render/ChunkShadowRenderer.h"
 #include "state/render/RegionShadowRenderer.h"
 
 
-#include <chrono>
 #include <memory>
 #include <mutex>
 
 namespace map_demo {
-
-using Clock = std::chrono::high_resolution_clock;
 
 RendererManager& RendererManager::getInstance() {
     static RendererManager instance;
@@ -101,22 +96,10 @@ void RendererManager::requestChunkBake(const std::shared_ptr<ChunkCacheData>& da
         std::lock_guard<std::mutex> lock(mutex_);
         if (!data->isBakedDirty()) {
             // 脏标记丢失：调度方认为该 chunk 脏，但标记已被消费，阴影可能残留
-            ShadowDebugLogger::getInstance().log(
-                "[queue] chunk=({},{}) dim={} -> SKIP_NOT_DIRTY (dirty flag lost)",
-                pos.x,
-                pos.z,
-                pos.dimId
-            );
             return;
         }
         if (!queuedChunks_.insert(pos).second) return;
         chunkQueue_.push(ChunkBakeTask{data, pos});
-        ShadowDebugLogger::getInstance().log(
-            "[queue] chunk=({},{}) dim={} -> QUEUED",
-            pos.x,
-            pos.z,
-            pos.dimId
-        );
     }
     cv_.notify_one();
 }
@@ -143,7 +126,6 @@ void RendererManager::workerLoop() {
         }
 
         baking_.store(true, std::memory_order_release);
-        auto t0 = Clock::now();
         if (isChunkTask) {
             auto data = chunkTask.data.lock();
             if (!data) {
@@ -158,37 +140,11 @@ void RendererManager::workerLoop() {
                 if (auto region = MapCacheManager::getInstance().getRegion(RegionPos(chunkTask.pos))) {
                     region->markBakedDirty();
                 }
-                ShadowDebugLogger::getInstance().log(
-                    "[bake] chunk=({},{}) dim={} -> DIRTY_KEPT (marked during chunk bake)",
-                    chunkTask.pos.x,
-                    chunkTask.pos.z,
-                    chunkTask.pos.dimId
-                );
             }
             if (auto region = MapCacheManager::getInstance().getRegion(RegionPos(chunkTask.pos))) {
                 region->markEverBaked();
             }
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
             baking_.store(false, std::memory_order_release);
-
-            ShadowDebugLogger::getInstance().log(
-                "[bake] chunk=({},{}) dim={} time={}us",
-                chunkTask.pos.x,
-                chunkTask.pos.z,
-                chunkTask.pos.dimId,
-                us
-            );
-
-            static int s_workerChunkLog = 0;
-            if ((++s_workerChunkLog % 100) == 0 || us > 50000) {
-                MapDemo::getInstance().getSelf().getLogger().debug(
-                    "RendererManager::worker bake chunk=({},{}), dim={}, time={}us",
-                    chunkTask.pos.x,
-                    chunkTask.pos.z,
-                    chunkTask.pos.dimId,
-                    us
-                );
-            }
         } else {
             auto data = regionTask.data.lock();
             if (!data) {
@@ -200,27 +156,7 @@ void RendererManager::workerLoop() {
             if (auto region = MapCacheManager::getInstance().getRegion(regionTask.pos)) {
                 region->markEverBaked();
             }
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
             baking_.store(false, std::memory_order_release);
-
-            ShadowDebugLogger::getInstance().log(
-                "[bake] region=({},{}) dim={} time={}us",
-                regionTask.pos.x,
-                regionTask.pos.z,
-                regionTask.pos.dimId,
-                us
-            );
-
-            static int s_workerLog = 0;
-            if ((++s_workerLog % 10) == 0 || us > 50000) {
-                MapDemo::getInstance().getSelf().getLogger().debug(
-                    "RendererManager::worker bake region=({},{}), dim={}, time={}us",
-                    regionTask.pos.x,
-                    regionTask.pos.z,
-                    regionTask.pos.dimId,
-                    us
-                );
-            }
         }
     }
 }

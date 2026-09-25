@@ -106,7 +106,7 @@ struct TerrainConfig {
     // 是否启用磁盘缓存
     bool enableDiskCache = true;
 
-    // 是否启用透明水效果（类似 BedrockMap）
+    // 是否启用透明水效果
     bool enableTransparentWater = true;
 
     // 每个维度的 cameraHeight（Y 坐标）
@@ -136,26 +136,6 @@ struct TerrainConfig {
         // 固定光源方向（方位角 315° 西北，天顶角 60°）
         float lightAzimuth = 315.0f;
         float lightZenith  = 60.0f;
-
-        // 是否输出阴影标脏/bake 调试日志到文件（<mod数据目录>/logs/shadow_debug.log）
-        bool debugLog = true;
-
-        // bake 时需要详细追踪 ray-march 过程的方块世界坐标列表（用于定位阴影 bug）
-        // 前 4 个为柱子（遮挡物），后 8 个为其东南方向跨区块的潜在接收方块
-        std::vector<std::pair<int, int>> watchBlocks = {
-            {-105, -62},
-            {-102, -62},
-            { -99, -62},
-            { -95, -62},
-            { -98, -61},
-            { -97, -60},
-            { -96, -59},
-            { -95, -58},
-            { -94, -61},
-            { -93, -60},
-            { -92, -59},
-            { -91, -58}
-        };
     } shadow;
 };
 

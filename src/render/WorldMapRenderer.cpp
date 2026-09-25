@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 
@@ -133,12 +134,17 @@ void WorldMapRenderer::handleInput(float zoom) {
     auto& state = MapState::getInstance();
     auto& cfg   = config::getConfig().worldMap;
 
+    // 窗口未激活时不响应拖拽与缩放：GetAsyncKeyState 是全局的，
+    // 焦点在其他窗口时的点击/滚动也会命中，必须以前台窗口判断过滤
+    HWND hwnd       = DX11Hook::getHwnd();
+    bool foreground = hwnd && GetForegroundWindow() == hwnd;
+
     // 光标位置与左键状态直接读 Win32：
     // MouseInputEvent 的 x/y 坐标系与 ImGui 显示尺寸不一致，不能用于拖拽
     float mouseX   = prevMouseX_;
     float mouseY   = prevMouseY_;
     bool  leftDown = false;
-    if (HWND hwnd = DX11Hook::getHwnd()) {
+    if (foreground) {
         POINT pt{};
         if (GetCursorPos(&pt) && ScreenToClient(hwnd, &pt)) {
             mouseX = static_cast<float>(pt.x);
@@ -146,6 +152,13 @@ void WorldMapRenderer::handleInput(float zoom) {
         }
         leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     }
+
+    // 参考 ChiyanMap：光标由 ImGui 绘制（io.MouseDrawCursor），
+    // 位置直接喂给 io.MousePos（本 mod 未接入 ImGui Win32 后端）。
+    // 窗口不在前台时置为无效坐标，让 ImGui 隐藏光标
+    auto& io           = ImGui::GetIO();
+    io.MouseDrawCursor = true;
+    io.MousePos        = foreground ? ImVec2(mouseX, mouseY) : ImVec2(-FLT_MAX, -FLT_MAX);
 
     // 左键拖拽平移
     if (leftDown && prevLeftDown_) {
@@ -155,7 +168,7 @@ void WorldMapRenderer::handleInput(float zoom) {
 
     // 滚轮缩放：以屏幕中心为缩放中心（视野中心不变，只改缩放值）
     auto mouse = InputBlocker::consumeMouseState();
-    if (mouse.wheelDelta != 0) {
+    if (foreground && mouse.wheelDelta != 0) {
         state.worldMapZoom = std::clamp(
             zoom * std::pow(cfg.zoomStep, static_cast<float>(mouse.wheelDelta)),
             cfg.minZoom,
@@ -171,14 +184,24 @@ void WorldMapRenderer::handleInput(float zoom) {
 void WorldMapRenderer::render() {
     auto& state = MapState::getInstance();
     if (!state.showWorldMap) {
+        if (wasOpen_) {
+            // 地图刚关闭：恢复 ImGui 不画光标、隐藏光标位置
+            auto& io           = ImGui::GetIO();
+            io.MouseDrawCursor = false;
+            io.MousePos        = ImVec2(-FLT_MAX, -FLT_MAX);
+            wasOpen_           = false;
+        }
         prevLeftDown_ = false;
         return;
     }
+    wasOpen_ = true;
 
     ++frameCounter_;
 
-    // 游戏会每帧用 ClipCursor 把光标锁死在窗口中心（隐形光标），
-    // 大地图打开期间每帧解除锁定并恢复箭头光标，否则无法拖拽/交互
+    // 游戏抓取鼠标后会每帧 ClipCursor 锁死光标并隐藏系统光标，
+    // ShowCursor 计数法会被游戏每帧抵消（已验证无效），因此大地图的光标
+    // 完全由 ImGui 绘制（见 handleInput 的 MouseDrawCursor/MousePos）；
+    // 这里只需解除裁剪，让光标能自由移动以拖拽地图
     ClipCursor(nullptr);
     SetCursor(LoadCursorW(nullptr, IDC_ARROW));
 

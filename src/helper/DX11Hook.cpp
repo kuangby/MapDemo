@@ -1,7 +1,6 @@
 #include "helper/DX11Hook.h"
 
 #include "config/Config.h"
-#include "mod/MapDemo.h"
 #include "render/MiniMapRenderer.h"
 #include "render/WorldMapRenderer.h"
 #include "state/MapState.h"
@@ -136,13 +135,9 @@ bool initGraphics(IDXGISwapChain* pSwapChain) {
     if (SUCCEEDED(hr11)) {
         g_currentAPI = GraphicsAPI::D3D11;
         g_pd3d11Device->GetImmediateContext(&g_pd3d11DeviceContext);
-        MapDemo::getInstance().getSelf().getLogger().debug("initGraphics: D3D11 mode");
     } else {
         // D3D12 mode - use D3D11On12
-        if (!g_pGameCommandQueue) {
-            MapDemo::getInstance().getSelf().getLogger().debug("initGraphics: D3D12 CommandQueue not captured yet");
-            return false;
-        }
+        if (!g_pGameCommandQueue) return false;
 
         ID3D12Device* pD3D12Device = nullptr;
         if (SUCCEEDED(pSwapChain->GetDevice(__uuidof(ID3D12Device), (void**)&pD3D12Device))) {
@@ -160,13 +155,8 @@ bool initGraphics(IDXGISwapChain* pSwapChain) {
                 ))) {
                 g_pd3d11Device->QueryInterface(__uuidof(ID3D11On12Device), (void**)&g_d3d11On12Device);
                 g_currentAPI = GraphicsAPI::D3D12;
-                MapDemo::getInstance().getSelf().getLogger().debug("initGraphics: D3D12 mode (D3D11On12)");
-            } else {
-                MapDemo::getInstance().getSelf().getLogger().debug("initGraphics: D3D11On12CreateDevice failed");
             }
             pD3D12Device->Release();
-        } else {
-            MapDemo::getInstance().getSelf().getLogger().debug("initGraphics: Get D3D12 device failed");
         }
     }
 
@@ -189,7 +179,6 @@ bool initGraphics(IDXGISwapChain* pSwapChain) {
 
         ImGui_ImplDX11_Init(g_pd3d11Device, g_pd3d11DeviceContext);
         g_initialized = true;
-        MapDemo::getInstance().getSelf().getLogger().debug("initGraphics: ImGui initialized");
         return true;
     }
 
@@ -291,12 +280,6 @@ void RenderImGui(IDXGISwapChain* pSwapChain) {
 }
 
 HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags) {
-    static bool s_presentLogged = false;
-    if (!s_presentLogged) {
-        MapDemo::getInstance().getSelf().getLogger().debug("hkPresent: first call");
-        s_presentLogged = true;
-    }
-
     RenderImGui(pSwapChain);
     return oPresent(pSwapChain, SyncInterval, Flags);
 }
@@ -314,10 +297,8 @@ HRESULT __stdcall hkPresent1(
 } // namespace
 
 bool init() {
-    MapDemo::getInstance().getSelf().getLogger().debug("DX11Hook::init: start");
     HWND hwnd = FindWindowW(L"Minecraft", NULL);
     if (!hwnd) hwnd = GetForegroundWindow();
-    MapDemo::getInstance().getSelf().getLogger().debug("DX11Hook::init: hwnd = {}", (void*)hwnd);
     if (!hwnd) return false;
 
     D3D_FEATURE_LEVEL    featureLevel = D3D_FEATURE_LEVEL_11_0;
@@ -348,37 +329,28 @@ bool init() {
             NULL,
             &dummyContext
         ))) {
-        MapDemo::getInstance().getSelf().getLogger().debug("DX11Hook::init: dummy swapchain created");
         void** pVTable = *reinterpret_cast<void***>(dummySwapChain);
 
         // Hook Present (VTable[8])
-        Present_t presentPtr  = reinterpret_cast<Present_t>(pVTable[8]);
-        g_targetPresent       = ll::memory::toFuncPtr(presentPtr);
-        g_detourPresent       = ll::memory::toFuncPtr(&hkPresent);
-        int presentHookResult = ll::memory::hook(
+        Present_t presentPtr = reinterpret_cast<Present_t>(pVTable[8]);
+        g_targetPresent      = ll::memory::toFuncPtr(presentPtr);
+        g_detourPresent      = ll::memory::toFuncPtr(&hkPresent);
+        ll::memory::hook(
             g_targetPresent,
             g_detourPresent,
             reinterpret_cast<ll::memory::FuncPtr*>(&oPresent),
             ll::memory::HookPriority::Normal
-        );
-        MapDemo::getInstance().getSelf().getLogger().debug(
-            "DX11Hook::init: Present hook result = {}",
-            presentHookResult
         );
 
         // Hook ResizeBuffers (VTable[13])
         ResizeBuffers_t resizeBuffersPtr = reinterpret_cast<ResizeBuffers_t>(pVTable[13]);
         g_targetResizeBuffers            = ll::memory::toFuncPtr(resizeBuffersPtr);
         g_detourResizeBuffers            = ll::memory::toFuncPtr(&hkResizeBuffers);
-        int resizeBuffersHookResult      = ll::memory::hook(
+        ll::memory::hook(
             g_targetResizeBuffers,
             g_detourResizeBuffers,
             reinterpret_cast<ll::memory::FuncPtr*>(&oResizeBuffers),
             ll::memory::HookPriority::Normal
-        );
-        MapDemo::getInstance().getSelf().getLogger().debug(
-            "DX11Hook::init: ResizeBuffers hook result = {}",
-            resizeBuffersHookResult
         );
 
         // Hook Present1 (VTable[22]) if available
@@ -388,15 +360,11 @@ bool init() {
             Present1_t present1Ptr = reinterpret_cast<Present1_t>(pVTable1[22]);
             g_targetPresent1       = ll::memory::toFuncPtr(present1Ptr);
             g_detourPresent1       = ll::memory::toFuncPtr(&hkPresent1);
-            int present1HookResult = ll::memory::hook(
+            ll::memory::hook(
                 g_targetPresent1,
                 g_detourPresent1,
                 reinterpret_cast<ll::memory::FuncPtr*>(&oPresent1),
                 ll::memory::HookPriority::Normal
-            );
-            MapDemo::getInstance().getSelf().getLogger().debug(
-                "DX11Hook::init: Present1 hook result = {}",
-                present1HookResult
             );
             dummySwapChain1->Release();
         }
@@ -421,26 +389,20 @@ bool init() {
                 ExecuteCommandLists_t executeCommandListsPtr = reinterpret_cast<ExecuteCommandLists_t>(pVTable12[10]);
                 g_targetExecuteCommandLists                  = ll::memory::toFuncPtr(executeCommandListsPtr);
                 g_detourExecuteCommandLists                  = ll::memory::toFuncPtr(&hkExecuteCommandLists);
-                int executeCommandListsHookResult            = ll::memory::hook(
+                ll::memory::hook(
                     g_targetExecuteCommandLists,
                     g_detourExecuteCommandLists,
                     reinterpret_cast<ll::memory::FuncPtr*>(&oExecuteCommandLists),
                     ll::memory::HookPriority::Normal
-                );
-                MapDemo::getInstance().getSelf().getLogger().debug(
-                    "DX11Hook::init: ExecuteCommandLists hook result = {}",
-                    executeCommandListsHookResult
                 );
                 pDummyQueue->Release();
             }
             pDummyD12Device->Release();
         }
 
-        MapDemo::getInstance().getSelf().getLogger().debug("DX11Hook::init: hooks installed");
         return true;
     }
 
-    MapDemo::getInstance().getSelf().getLogger().debug("DX11Hook::init: failed to create dummy swapchain");
     return false;
 }
 

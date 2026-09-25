@@ -6,15 +6,12 @@
 #include "data/pos/RegionChunkPos.h"
 #include "data/pos/RegionPos.h"
 #include "data/pos/WorldPos.h"
-#include "helper/ShadowDebugLogger.h"
-#include "mod/MapDemo.h"
 #include "state/render/RendererManager.h"
 
 
 #include <imgui.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -25,8 +22,6 @@
 
 
 namespace map_demo {
-
-using Clock = std::chrono::high_resolution_clock;
 
 MiniMapRenderer& MiniMapRenderer::getInstance() {
     static MiniMapRenderer instance;
@@ -136,12 +131,9 @@ void drawTerrainPixel(
 } // namespace
 
 void MiniMapRenderer::render() {
-    auto  renderT0 = Clock::now();
-    auto& cfg      = config::getConfig();
-    auto& mmc      = cfg.miniMap;
+    auto& cfg = config::getConfig();
+    auto& mmc = cfg.miniMap;
 
-    static int s_renderCount = 0;
-    ++s_renderCount;
     auto& io    = ImGui::GetIO();
     auto& state = MapState::getInstance();
     state.updateSmoothCamera(io.DeltaTime);
@@ -211,34 +203,8 @@ void MiniMapRenderer::render() {
 
                     // 脏 chunk 数量超过阈值时走 region 级 bake，否则按 chunk 级逐个 bake
                     if (static_cast<int>(dirty.size()) > cfg.terrain.regionBakeThreshold) {
-                        ShadowDebugLogger::getInstance().log(
-                            "[schedule] region=({},{}) dim={} dirtyChunks={} -> REGION_BAKE",
-                            regionPos.x,
-                            regionPos.z,
-                            dimId,
-                            dirty.size()
-                        );
                         rendererManager.requestBake(region, regionPos);
                     } else {
-                        if (ShadowDebugLogger::getInstance().isEnabled()) {
-                            std::string list;
-                            for (auto& rc : dirty) {
-                                fmt::format_to(
-                                    std::back_inserter(list),
-                                    "({},{}) ",
-                                    regionPos.x * 16 + rc.x,
-                                    regionPos.z * 16 + rc.z
-                                );
-                            }
-                            ShadowDebugLogger::getInstance().log(
-                                "[schedule] region=({},{}) dim={} dirtyChunks={} -> CHUNK_BAKE: {}",
-                                regionPos.x,
-                                regionPos.z,
-                                dimId,
-                                dirty.size(),
-                                list
-                            );
-                        }
                         for (auto& rc : dirty) {
                             auto chunk = region->getChunkData(rc);
                             if (chunk)
@@ -382,15 +348,6 @@ void MiniMapRenderer::render() {
     drawList->AddText(textPos, toImCol32(mmc.coordTextColor), coordBuf);
 
     drawList->AddCircle(center, radius, toImCol32(mmc.borderColor), mmc.circleSegments, mmc.borderThickness);
-
-    if (s_renderCount % 60 == 0) {
-        auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - renderT0).count();
-        MapDemo::getInstance().getSelf().getLogger().debug(
-            "MiniMapRenderer::render: count={}, total={}us",
-            s_renderCount,
-            totalUs
-        );
-    }
 }
 
 } // namespace map_demo

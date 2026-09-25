@@ -15,8 +15,6 @@
 #include <mc/world/level/block/components/BlockMapColorComponent.h>
 #include <mc/world/level/material/Material.h>
 
-#include "mod/MapDemo.h"
-
 #include <algorithm>
 
 namespace map_demo {
@@ -37,14 +35,6 @@ static mce::Color getVanillaMapColor(Block const& block, BlockSource& source, Bl
         mce::Color  tint   = policy.get(source, pos);
         mce::Color  base   = comp->mMapColor.get();
 
-
-        // MapDemo::getInstance().getSelf().getLogger().info(
-        //     "biome: {}, block: {}, color: {}, tint: {}",
-        //     source.getBiome(pos).mHash->c_str(),
-        //     block.getTypeName(),
-        //     base,
-        //     tint
-        // );
         return mce::Color(base.r * tint.r, base.g * tint.g, base.b * tint.b, base.a);
     }
     return block.getBlockType().getMapColor(source, pos, block);

@@ -8,7 +8,6 @@
 #include "data/pos/ChunkPosWithDim.h"
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/WorldPos.h"
-#include "helper/ShadowDebugLogger.h"
 
 
 #include <algorithm>
@@ -41,32 +40,6 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data) {
         applyStyle1();
     } else if (cfg.renderStyle == 2) {
         applyStyle2();
-    }
-
-    if (ShadowDebugLogger::getInstance().isEnabled() && handlingChunk) {
-        int shadowedSubpixels = 0;
-        for (auto& row : handlingChunk->blocksData) {
-            for (auto& block : row) {
-                for (auto& r : block.shadowOriginData) {
-                    for (float v : r) {
-                        if (v > 0.0001f) ++shadowedSubpixels;
-                    }
-                }
-            }
-        }
-        ShadowDebugLogger::getInstance().log(
-            "[bakeTrace] chunk=({},{}) dim={} style={} scale={} shadowScale={} heightQueries={} misses={}"
-            " shadowedSubpixels={}",
-            handlingChunkPos.x,
-            handlingChunkPos.z,
-            handlingChunkPos.dimId,
-            cfg.renderStyle,
-            cfg.renderScale,
-            handlingChunk->shadowScale,
-            heightQueryCount,
-            heightQueryMiss,
-            shadowedSubpixels
-        );
     }
 
     // bake 结束、写回之前：把 bake 结果写入大地图 region 缓存（当前为 bake 工作线程，缓存内部加锁）
@@ -178,24 +151,6 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
             auto westChunk      = getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, 0, dimId}, scale);
             auto northWestChunk = getChunkWithEffectiveShadowData(ChunkPosWithDim{-1, -1, dimId}, scale);
             auto northChunk     = getChunkWithEffectiveShadowData(ChunkPosWithDim{0, -1, dimId}, scale);
-            if (ShadowDebugLogger::getInstance().isEnabled()) {
-                auto neighborState = [this, dimId, scale](int ox, int oz) -> std::string {
-                    auto raw = getChunk(ChunkPosWithDim{ox, oz, dimId});
-                    if (!raw) return "missing";
-                    if (raw->shadowScale != scale) return fmt::format("scale_mismatch({})", raw->shadowScale);
-                    return "ok";
-                };
-                ShadowDebugLogger::getInstance().log(
-                    "[shadowMap] chunk=({},{}) dim={} scale={} path=FAST west={} northWest={} north={}",
-                    handlingChunkPos.x,
-                    handlingChunkPos.z,
-                    dimId,
-                    scale,
-                    neighborState(-1, 0),
-                    neighborState(-1, -1),
-                    neighborState(0, -1)
-                );
-            }
             for (int blockZ = 0; blockZ < 16; blockZ++) {
                 const BlockDataBase* westBlock = nullptr;
                 if (westChunk) westBlock = &westChunk->getBlockBaseData(ChunkWorldPos{15, blockZ});
@@ -216,24 +171,6 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                                 && (!northWestBlock || handlingBlockData.height >= northWestBlock->height);
                     int h = handlingBlockData.height;
 
-                    int  worldBX = handlingChunkPos.x * 16 + blockX;
-                    int  worldBZ = handlingChunkPos.z * 16 + blockZ;
-                    bool watched = ShadowDebugLogger::getInstance().isEnabled()
-                                && ShadowDebugLogger::isWatchedBlock(worldBX, worldBZ);
-                    if (watched) {
-                        ShadowDebugLogger::getInstance().log(
-                            "[watch] block=({},{}) dim={} height={} canSkip={} westH={} northH={} northWestH={}",
-                            worldBX,
-                            worldBZ,
-                            dimId,
-                            h,
-                            canSkip,
-                            westBlock ? westBlock->height : -999,
-                            northBlock ? northBlock->height : -999,
-                            northWestBlock ? northWestBlock->height : -999
-                        );
-                    }
-
                     for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                         float westShadowData = 0.0f;
                         if (westBlock) westShadowData = westBlock->shadowOriginData[scaleZ][scale - 1];
@@ -251,19 +188,6 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                             if (canSkip && westShadowData < 0.0001f && northShadowData < 0.0001f
                                 && northWestShadowData < 0.0001f) {
                                 handlingBlockData.shadowOriginData[scaleZ][scaleX] = 0.0f;
-                                if (watched) {
-                                    ShadowDebugLogger::getInstance().log(
-                                        "[watch] block=({},{}) sub=({},{}) SKIPPED_BY_PROPAGATION"
-                                        " westS={:.3f} northS={:.3f} northWestS={:.3f} -> 0",
-                                        worldBX,
-                                        worldBZ,
-                                        scaleX,
-                                        scaleZ,
-                                        westShadowData,
-                                        northShadowData,
-                                        northWestShadowData
-                                    );
-                                }
                                 continue;
                             }
 
@@ -281,56 +205,13 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                                     lastOffsetPos.z   = sz;
                                     int currentHeight = h + static_cast<int>(static_cast<float>(s) * dzPerStep + 0.01f);
                                     int sampleHeight  = getHeight(lastOffsetPos);
-                                    if (watched) {
-                                        ShadowDebugLogger::getInstance().log(
-                                            "[watch] block=({},{}) sub=({},{}) s={} sample=({},{}) sampleH={}"
-                                            " currentH={}",
-                                            worldBX,
-                                            worldBZ,
-                                            scaleX,
-                                            scaleZ,
-                                            s,
-                                            handlingChunkPos.x * 16 + sx,
-                                            handlingChunkPos.z * 16 + sz,
-                                            sampleHeight,
-                                            currentHeight
-                                        );
-                                    }
                                     if (sampleHeight > currentHeight) {
                                         handlingBlockData.shadowOriginData[scaleZ][scaleX] = kShadowDarkness;
-                                        if (watched) {
-                                            ShadowDebugLogger::getInstance().log(
-                                                "[watch] block=({},{}) sub=({},{}) -> SHADOW",
-                                                worldBX,
-                                                worldBZ,
-                                                scaleX,
-                                                scaleZ
-                                            );
-                                        }
                                         break;
                                     } else if (currentHeight > maxY) {
-                                        if (watched) {
-                                            ShadowDebugLogger::getInstance().log(
-                                                "[watch] block=({},{}) sub=({},{}) -> SKY (exceed maxY)",
-                                                worldBX,
-                                                worldBZ,
-                                                scaleX,
-                                                scaleZ
-                                            );
-                                        }
                                         break;
                                     }
                                 }
-                            }
-                            if (watched) {
-                                ShadowDebugLogger::getInstance().log(
-                                    "[watch] block=({},{}) sub=({},{}) final shadowData={:.3f}",
-                                    worldBX,
-                                    worldBZ,
-                                    scaleX,
-                                    scaleZ,
-                                    handlingBlockData.shadowOriginData[scaleZ][scaleX]
-                                );
                             }
                             westShadowData      = handlingBlockData.shadowOriginData[scaleZ][scaleX];
                             northWestShadowData = northShadowData;
@@ -345,35 +226,12 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
     } else {
         auto chunk = handlingChunk;
         if (chunk) {
-            if (ShadowDebugLogger::getInstance().isEnabled()) {
-                ShadowDebugLogger::getInstance().log(
-                    "[shadowMap] chunk=({},{}) dim={} scale={} path=GENERIC",
-                    handlingChunkPos.x,
-                    handlingChunkPos.z,
-                    dimId,
-                    scale
-                );
-            }
             for (int blockZ = 0; blockZ < 16; blockZ++) {
                 for (int blockX = 0; blockX < 16; blockX++) {
                     auto& shadowOriginData = chunk->blocksData[blockZ][blockX].shadowOriginData;
                     shadowOriginData.assign(scale, std::vector<float>(scale, 0.0f));
                     auto& handlingBlockData = chunk->getBlockData(ChunkWorldPos(blockX, blockZ));
                     int   h                 = handlingBlockData.height;
-
-                    int  worldBX = handlingChunkPos.x * 16 + blockX;
-                    int  worldBZ = handlingChunkPos.z * 16 + blockZ;
-                    bool watched = ShadowDebugLogger::getInstance().isEnabled()
-                                && ShadowDebugLogger::isWatchedBlock(worldBX, worldBZ);
-                    if (watched) {
-                        ShadowDebugLogger::getInstance().log(
-                            "[watch] block=({},{}) dim={} height={} path=GENERIC",
-                            worldBX,
-                            worldBZ,
-                            dimId,
-                            h
-                        );
-                    }
 
                     for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                         for (int scaleX = 0; scaleX < scale; scaleX++) {
@@ -391,56 +249,13 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                                     lastOffsetPos.z   = sz;
                                     int currentHeight = h + static_cast<int>(static_cast<float>(s) * dzPerStep + 0.01f);
                                     int sampleHeight  = getHeight(lastOffsetPos);
-                                    if (watched) {
-                                        ShadowDebugLogger::getInstance().log(
-                                            "[watch] block=({},{}) sub=({},{}) s={} sample=({},{}) sampleH={}"
-                                            " currentH={}",
-                                            worldBX,
-                                            worldBZ,
-                                            scaleX,
-                                            scaleZ,
-                                            s,
-                                            handlingChunkPos.x * 16 + sx,
-                                            handlingChunkPos.z * 16 + sz,
-                                            sampleHeight,
-                                            currentHeight
-                                        );
-                                    }
                                     if (sampleHeight > currentHeight) {
                                         handlingBlockData.shadowOriginData[scaleZ][scaleX] = kShadowDarkness;
-                                        if (watched) {
-                                            ShadowDebugLogger::getInstance().log(
-                                                "[watch] block=({},{}) sub=({},{}) -> SHADOW",
-                                                worldBX,
-                                                worldBZ,
-                                                scaleX,
-                                                scaleZ
-                                            );
-                                        }
                                         break;
                                     } else if (currentHeight > maxY) {
-                                        if (watched) {
-                                            ShadowDebugLogger::getInstance().log(
-                                                "[watch] block=({},{}) sub=({},{}) -> SKY (exceed maxY)",
-                                                worldBX,
-                                                worldBZ,
-                                                scaleX,
-                                                scaleZ
-                                            );
-                                        }
                                         break;
                                     }
                                 }
-                            }
-                            if (watched) {
-                                ShadowDebugLogger::getInstance().log(
-                                    "[watch] block=({},{}) sub=({},{}) final shadowData={:.3f}",
-                                    worldBX,
-                                    worldBZ,
-                                    scaleX,
-                                    scaleZ,
-                                    handlingBlockData.shadowOriginData[scaleZ][scaleX]
-                                );
                             }
                         }
                     }
@@ -539,20 +354,6 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                             }
                         }
                     }
-                    if (ShadowDebugLogger::getInstance().isEnabled()
-                        && ShadowDebugLogger::isWatchedBlock(
-                            handlingChunkPos.x * 16 + blockX,
-                            handlingChunkPos.z * 16 + blockZ
-                        )) {
-                        ShadowDebugLogger::getInstance().log(
-                            "[watch] block=({},{}) dim={} PCF sum={:.3f} multiplier={:.3f}",
-                            handlingChunkPos.x * 16 + blockX,
-                            handlingChunkPos.z * 16 + blockZ,
-                            dimId,
-                            sum,
-                            1.0f - sum / static_cast<float>((2 * pcfRadius + 1) * scale * scale)
-                        );
-                    }
                     handlingBlock.color = multiplyColor(
                         handlingBlock.color,
                         1.0f - sum / static_cast<float>((2 * pcfRadius + 1) * scale * scale)
@@ -570,20 +371,6 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                         for (int scaleX = 0; scaleX < scale; scaleX++) {
                             finalShadowData += handlingBlock.shadowOriginData[scaleZ][scaleX];
                         }
-                    }
-                    if (ShadowDebugLogger::getInstance().isEnabled()
-                        && ShadowDebugLogger::isWatchedBlock(
-                            handlingChunkPos.x * 16 + blockX,
-                            handlingChunkPos.z * 16 + blockZ
-                        )) {
-                        ShadowDebugLogger::getInstance().log(
-                            "[watch] block=({},{}) dim={} noPCF finalShadow={:.3f} multiplier={:.3f}",
-                            handlingChunkPos.x * 16 + blockX,
-                            handlingChunkPos.z * 16 + blockZ,
-                            dimId,
-                            finalShadowData,
-                            1.0f - finalShadowData / static_cast<float>(scale * scale)
-                        );
                     }
                     handlingBlock.color =
                         multiplyColor(handlingBlock.color, 1.0f - finalShadowData / static_cast<float>(scale * scale));

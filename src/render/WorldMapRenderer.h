@@ -43,6 +43,8 @@ private:
     float prevMouseX_    = 0.0f;
     float prevMouseY_    = 0.0f;
     bool  prevLeftDown_  = false;
+    // 大地图上一帧是否打开（关闭瞬间复位 ImGui 光标绘制状态用）
+    bool  wasOpen_       = false;
 };
 
 } // namespace map_demo

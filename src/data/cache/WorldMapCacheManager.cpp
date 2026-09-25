@@ -186,7 +186,6 @@ void WorldMapCacheManager::onEnterWorld(ClientInstance* clientInstance, LocalPla
         storageDir_ = root;
         db_         = std::make_unique<ll::data::KeyValueDB>(root);
         dbOpen_     = true;
-        self.getLogger().debug("WorldMap disk cache opened at: {}", root.string());
     }
     {
         std::unique_lock<std::shared_mutex> lock(mutex_);

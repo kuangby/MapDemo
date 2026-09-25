@@ -53,7 +53,6 @@ LL_TYPE_INSTANCE_HOOK(
         int         playerDimId = player->getDimensionId();
 
         if (!s_wasInWorld) {
-            MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player entered world");
             MapState::getInstance().resetSmoothCamera(pos.x, pos.z, yaw);
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
@@ -72,15 +71,13 @@ LL_TYPE_INSTANCE_HOOK(
                                    ? worldPath.value() / "terrain_cache"
                                    : MapDemo::getInstance().getSelf().getDataDir() / "terrain_cache";
                 std::filesystem::create_directories(cachePath);
-                bool cacheOk = MapCacheManager::getInstance().initializeDiskCache(cachePath);
-                MapDemo::getInstance().getSelf().getLogger().debug("Terrain disk cache init result: {}", cacheOk);
+                MapCacheManager::getInstance().initializeDiskCache(cachePath);
 
                 // 大地图缓存：本地存档存 getWorldDataDir，远程服务器按 ip+端口+种子 存 getDataDir/servers 下
                 WorldMapCacheManager::getInstance().onEnterWorld(this, player);
             }
         } else if (playerDimId != dimId) {
             dimId = playerDimId;
-            MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player change dimension");
             MapState::getInstance().resetSmoothCamera(pos.x, pos.z, yaw);
             RendererManager::getInstance().clearQueueAndWait();
             MapCacheManager::getInstance().clearAll();
@@ -111,7 +108,6 @@ LL_TYPE_INSTANCE_HOOK(
         }
     } else {
         if (s_wasInWorld) {
-            MapDemo::getInstance().getSelf().getLogger().debug("PlayerHook: player left world");
             if (s_listenerSource) {
                 s_listenerSource->removeListener(BlockChangeListener::getInstance());
                 s_listenerSource = nullptr;

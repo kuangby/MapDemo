@@ -188,31 +188,23 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
     outHitPlaceholder = false;
 
-    // 无数据 chunk 预检：高度表全部停在世界最高点（mVal>>4 越出子区块范围）
-    // 说明服务端数据完全未到，直接跳过本次扫描，按占位符语义短延迟重扫，
-    // 避免 256 列的空遍历与幻影高度写入
     {
-        const auto& heightmap     = chunk->mHeightmap.get();
-        const int   subChunkCount = static_cast<int>(chunk->mSubChunks.get().size());
-        bool        noDataAtAll   = true;
-        for (int i = 0; i < 256; ++i) {
-            if ((static_cast<int>(heightmap[i].mVal) >> 4) < subChunkCount) {
-                noDataAtAll = false;
-                break;
-            }
-        }
-        if (noDataAtAll) {
-            outHitPlaceholder = true;
-            return false;
-        }
+        const int subChunkCount = static_cast<int>(chunk->mSubChunks.get().size());
+        if (chunk->mSubChunks.get()[subChunkCount - 1].isPlaceHolderSubChunk()) return false;
     }
 
     // 扫描相机高度（Y 坐标）：主世界 320，地狱 127（基岩层顶），末地 256
     int cameraHeight;
     switch (key.dimId) {
-    case 1:  cameraHeight = 127; break;
-    case 2:  cameraHeight = 256; break;
-    default: cameraHeight = 320; break;
+    case 1:
+        cameraHeight = 127;
+        break;
+    case 2:
+        cameraHeight = 256;
+        break;
+    default:
+        cameraHeight = 320;
+        break;
     }
 
     auto regionData = MapCacheManager::getInstance().getOrCreateRegion(RegionPos(key));
@@ -232,8 +224,8 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
     {
         std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
-        oldMinHeight = chunkData->minHeight;
-        oldMaxHeight = chunkData->maxHeight;
+        oldMinHeight          = chunkData->minHeight;
+        oldMaxHeight          = chunkData->maxHeight;
         const auto& subChunks = chunk->mSubChunks.get();
         for (int chunkWorldPosZ = 0; chunkWorldPosZ < 16; ++chunkWorldPosZ) {
             for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
@@ -268,12 +260,12 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
                 if (!chunkData->loadChunkBaseData) {
 
-                    chunkData->loadChunkBaseData      = true;
-                    firstLoaded                       = true;
-                    currentBlockData.color            = color;
-                    currentBlockData.waterDepth       = water.waterDepth;
+                    chunkData->loadChunkBaseData       = true;
+                    firstLoaded                        = true;
+                    currentBlockData.color             = color;
+                    currentBlockData.waterDepth        = water.waterDepth;
                     currentBlockData.waterSurfaceColor = water.waterSurfaceColor;
-                    currentBlockData.height      = static_cast<std::int16_t>(heightVal);
+                    currentBlockData.height            = static_cast<std::int16_t>(heightVal);
                     currentBlockData.solidHeight =
                         static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
 
@@ -328,8 +320,7 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
         float       zenith_rad  = shadowCfg.lightZenith * deg2rad;
 
         int higherHeight = firstLoaded ? chunkMaxHeight : std::max(oldMaxHeight, chunkMaxHeight);
-        int lowerHeight  = firstLoaded ? std::numeric_limits<int>::min() / 2
-                                       : std::min(oldMinHeight, chunkMinHeight);
+        int lowerHeight  = firstLoaded ? std::numeric_limits<int>::min() / 2 : std::min(oldMinHeight, chunkMinHeight);
 
         auto affected = getAffectedChunksForRect(
             key.x * 16,
@@ -368,9 +359,15 @@ bool TerrainScanner::scanColumn(
     // 扫描相机高度（Y 坐标）：主世界 320，地狱 127（基岩层顶），末地 256
     int cameraHeight;
     switch (key.dimId) {
-    case 1:  cameraHeight = 127; break;
-    case 2:  cameraHeight = 256; break;
-    default: cameraHeight = 320; break;
+    case 1:
+        cameraHeight = 127;
+        break;
+    case 2:
+        cameraHeight = 256;
+        break;
+    default:
+        cameraHeight = 320;
+        break;
     }
 
     auto regionData = MapCacheManager::getInstance().getOrCreateRegion(RegionPos(key));

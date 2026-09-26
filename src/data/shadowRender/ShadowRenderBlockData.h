@@ -19,6 +19,8 @@ public:
     ShadowRenderBlockData() = default;
 
     explicit ShadowRenderBlockData(const BlockCacheData& cacheData)
-    : BlockDataBase(static_cast<const BlockDataBase&>(cacheData)) {}
+    : BlockDataBase(static_cast<const BlockDataBase&>(cacheData)),
+      waterDepth(cacheData.waterDepth),
+      waterSurfaceColor(cacheData.waterSurfaceColor) {}
 };
 } // namespace map_demo

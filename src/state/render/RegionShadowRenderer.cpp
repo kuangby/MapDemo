@@ -36,13 +36,12 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             if (!chunkData || !chunkData->loadChunkBaseData) continue;
             std::shared_lock<std::shared_mutex> lock(chunkData->mutex_);
-            handlingRegion[regionChunkZ][regionChunkX]   = std::make_shared<ShadowRenderChunkData>(*chunkData);
+            handlingRegion[regionChunkZ][regionChunkX]     = std::make_shared<ShadowRenderChunkData>(*chunkData);
             dirtyEpochSnapshot[regionChunkZ][regionChunkX] = chunkData->bakedDirtyEpoch;
         }
     }
 
     auto& cfg = config::getConfig().terrain.shadow;
-    if (config::getConfig().terrain.enableTransparentWater) applyWaterOverlay();
 
     heightQueryCount = 0;
     heightQueryMiss  = 0;
@@ -52,6 +51,9 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
     } else if (cfg.renderStyle == 2) {
         applyStyle2();
     }
+
+    // 阴影/bevel 已作用于固体色，水面最后叠加
+    if (config::getConfig().terrain.enableTransparentWater) applyWaterOverlay();
 
     // bake 结束、写回之前：把 bake 结果写入大地图 region 缓存（当前为 bake 工作线程，缓存内部加锁）
     WorldMapCacheManager::getInstance().updateFromRegionBake(handlingRegionPos, handlingRegion);
@@ -65,14 +67,13 @@ void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
             if (!shadowChunkData) continue;
             auto chunkData = data->getChunkData(RegionChunkPos(regionChunkX, regionChunkZ));
             std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
-            bool isBoundary =
-                regionChunkX == 0 || regionChunkX == 15 || regionChunkZ == 0 || regionChunkZ == 15;
+            bool isBoundary    = regionChunkX == 0 || regionChunkX == 15 || regionChunkZ == 0 || regionChunkZ == 15;
             bool shadowChanged = false;
             for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
                 for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
-                    auto& blockData            = chunkData->blocksData[chunkWorldZ][chunkWorldX];
-                    auto& shadowBlockData      = shadowChunkData->blocksData[chunkWorldZ][chunkWorldX];
-                    blockData.bakedColor       = shadowBlockData.color;
+                    auto& blockData       = chunkData->blocksData[chunkWorldZ][chunkWorldX];
+                    auto& shadowBlockData = shadowChunkData->blocksData[chunkWorldZ][chunkWorldX];
+                    blockData.bakedColor  = shadowBlockData.color;
                     if (isBoundary && !shadowChanged
                         && blockData.shadowOriginData != shadowBlockData.shadowOriginData) {
                         shadowChanged = true;
@@ -169,16 +170,22 @@ void RegionShadowRenderer::applyStyle1() {
     }
 }
 
+// 水面叠加：阴影/bevel 之后执行，水色按水深盖在固体色上，不被地形阴影压暗
 void RegionShadowRenderer::applyWaterOverlay() {
-    // for (int z = 0; z < ShadowRegion::SIZE; ++z) {
-    //     for (int x = 0; x < ShadowRegion::SIZE; ++x) {
-    //         const auto& info = getInfo(x, z);
-    //         if (info.waterDepth == 0) continue;
-
-    //         float opacity = std::min(0.15f * static_cast<float>(info.waterDepth), 0.85f);
-    //         setPixel(x, z, blendColors(getPixel(x, z), info.waterSurfaceColor, opacity));
-    //     }
-    // }
+    for (int regionChunkZ = 0; regionChunkZ < 16; ++regionChunkZ) {
+        for (int regionChunkX = 0; regionChunkX < 16; ++regionChunkX) {
+            auto chunk = handlingRegion[regionChunkZ][regionChunkX];
+            if (!chunk) continue;
+            for (int chunkWorldZ = 0; chunkWorldZ < 16; ++chunkWorldZ) {
+                for (int chunkWorldX = 0; chunkWorldX < 16; ++chunkWorldX) {
+                    auto& block = chunk->blocksData[chunkWorldZ][chunkWorldX];
+                    if (!block.waterDepth) continue;
+                    float opacity = std::min(0.1f * static_cast<float>(block.waterDepth), 0.6f);
+                    block.color   = blendColors(block.color, block.waterSurfaceColor, opacity);
+                }
+            }
+        }
+    }
 }
 
 void RegionShadowRenderer::applyShadowMap(int scale) {
@@ -241,7 +248,7 @@ void RegionShadowRenderer::applyShadowMap(int scale) {
                                     && handlingBlockData.height >= westBlock->height
                                     && handlingBlockData.height >= northBlock->height
                                     && handlingBlockData.height >= northWestBlock->height;
-                        int h = handlingBlockData.height;
+                        int  h       = handlingBlockData.height;
 
                         for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                             float westShadowData = 0.0f;
@@ -264,11 +271,11 @@ void RegionShadowRenderer::applyShadowMap(int scale) {
                                     continue;
                                 }
 
-                                float offsetX = static_cast<float>(chunkX * 16 + blockX)
-                                              + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
-                                float offsetZ = static_cast<float>(chunkZ * 16 + blockZ)
-                                              + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
-                                auto lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
+                                float offsetX       = static_cast<float>(chunkX * 16 + blockX)
+                                                    + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
+                                float offsetZ       = static_cast<float>(chunkZ * 16 + blockZ)
+                                                    + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
+                                auto  lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
                                 for (int s = 1; s <= kMaxSteps; ++s) {
                                     // 负坐标下 static_cast<int> 会向零截断，必须用 floor 保证采样到正确方块
                                     int sx = static_cast<int>(std::floor(offsetX + static_cast<float>(s) * sdx));
@@ -315,11 +322,11 @@ void RegionShadowRenderer::applyShadowMap(int scale) {
 
                         for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                             for (int scaleX = 0; scaleX < scale; scaleX++) {
-                                float offsetX = static_cast<float>(chunkX * 16 + blockX)
-                                              + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
-                                float offsetZ = static_cast<float>(chunkZ * 16 + blockZ)
-                                              + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
-                                auto lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
+                                float offsetX       = static_cast<float>(chunkX * 16 + blockX)
+                                                    + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
+                                float offsetZ       = static_cast<float>(chunkZ * 16 + blockZ)
+                                                    + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
+                                auto  lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
                                 for (int s = 1; s <= kMaxSteps * scale; ++s) {
                                     // 负坐标下 static_cast<int> 会向零截断，必须用 floor 保证采样到正确方块
                                     int sx = static_cast<int>(std::floor(offsetX + static_cast<float>(s) * sdx));

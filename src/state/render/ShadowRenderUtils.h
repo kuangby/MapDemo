@@ -20,6 +20,17 @@ inline BlockColor multiplyColor(BlockColor c, float factor) {
     };
 }
 
+// 线性混合：(1 - opacity) * dst + opacity * src
+inline BlockColor blendColors(BlockColor dst, BlockColor src, float opacity) {
+    const float inv = 1.0f - opacity;
+    return BlockColor{
+        static_cast<std::uint8_t>(clamp255(static_cast<int>(static_cast<float>(dst.r) * inv + static_cast<float>(src.r) * opacity))),
+        static_cast<std::uint8_t>(clamp255(static_cast<int>(static_cast<float>(dst.g) * inv + static_cast<float>(src.g) * opacity))),
+        static_cast<std::uint8_t>(clamp255(static_cast<int>(static_cast<float>(dst.b) * inv + static_cast<float>(src.b) * opacity))),
+        dst.a
+    };
+}
+
 inline std::array<float, 81> buildBevelTable(int scale) {
     constexpr float kEdgeBright  = 1.18f;
     constexpr float kEdgeDark    = 0.72f;

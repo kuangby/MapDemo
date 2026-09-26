@@ -13,10 +13,10 @@
 
 namespace map_demo {
 
-ll::event::ListenerPtr InputBlocker::s_keyListener;
-ll::event::ListenerPtr InputBlocker::s_mouseListener;
-ClientInstance*        InputBlocker::s_clientInstance = nullptr;
-std::mutex             InputBlocker::s_mouseMutex;
+ll::event::ListenerPtr   InputBlocker::s_keyListener;
+ll::event::ListenerPtr   InputBlocker::s_mouseListener;
+ClientInstance*          InputBlocker::s_clientInstance = nullptr;
+std::mutex               InputBlocker::s_mouseMutex;
 InputBlocker::MouseState InputBlocker::s_mouse;
 
 namespace {
@@ -51,7 +51,7 @@ void InputBlocker::registerListeners() {
             return;
         }
         // 大地图打开：拦截一切按键
-        event.cancel();
+        if (event.isDown()) event.cancel();
         if (!isDown) return;
         if (keyCode == toggleKey) {
             if (ctrlDown) {
@@ -78,7 +78,7 @@ void InputBlocker::registerListeners() {
                 s_mouse.wheelDelta += (buttonData > 0) ? 1 : ((buttonData < 0) ? -1 : 0);
             }
         }
-        event.cancel();
+        if (event.buttonData() == 1 || event.actionButtonId() == 4 || event.actionButtonId() == 0) event.cancel();
     });
 }
 

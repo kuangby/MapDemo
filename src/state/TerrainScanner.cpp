@@ -252,11 +252,13 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                     continue;
                 }
 
-                auto color = getTerrainPixelAtCameraHeight(
+                WaterSplit water;
+                auto       color = getTerrainPixelAtCameraHeight(
                     chunk,
                     {chunkWorldPosX, chunkWorldPosZ},
                     cameraHeight,
-                    outHitPlaceholder
+                    outHitPlaceholder,
+                    &water
                 );
 
                 if (heightVal < chunkMinHeight) chunkMinHeight = heightVal;
@@ -266,9 +268,11 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
                 if (!chunkData->loadChunkBaseData) {
 
-                    chunkData->loadChunkBaseData = true;
-                    firstLoaded                  = true;
-                    currentBlockData.color       = color;
+                    chunkData->loadChunkBaseData      = true;
+                    firstLoaded                       = true;
+                    currentBlockData.color            = color;
+                    currentBlockData.waterDepth       = water.waterDepth;
+                    currentBlockData.waterSurfaceColor = water.waterSurfaceColor;
                     currentBlockData.height      = static_cast<std::int16_t>(heightVal);
                     currentBlockData.solidHeight =
                         static_cast<std::int16_t>(chunk->mRenderHeightmap.get()[idx].mVal + minY);
@@ -278,6 +282,12 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                     if (currentBlockData.color != color) {
                         currentBlockData.color = color;
                         changed                = true;
+                    }
+                    if (currentBlockData.waterDepth != water.waterDepth
+                        || currentBlockData.waterSurfaceColor != water.waterSurfaceColor) {
+                        currentBlockData.waterDepth        = water.waterDepth;
+                        currentBlockData.waterSurfaceColor = water.waterSurfaceColor;
+                        changed                            = true;
                     }
                     if (currentBlockData.height != heightVal) {
                         currentBlockData.height = static_cast<std::int16_t>(heightVal);
@@ -382,7 +392,8 @@ bool TerrainScanner::scanColumn(
         // 基础数据尚未整体扫描过：单列更新无意义，交给整 chunk 扫描
         if (!chunkData->loadChunkBaseData) return false;
 
-        auto color = getTerrainPixelAtCameraHeight(chunk, pos, cameraHeight, outHitPlaceholder);
+        WaterSplit water;
+        auto       color = getTerrainPixelAtCameraHeight(chunk, pos, cameraHeight, outHitPlaceholder, &water);
 
         auto& currentBlockData = chunkData->blocksData[pos.z][pos.x];
         oldHeight              = currentBlockData.height;
@@ -390,6 +401,12 @@ bool TerrainScanner::scanColumn(
         if (currentBlockData.color != color) {
             currentBlockData.color = color;
             changed                = true;
+        }
+        if (currentBlockData.waterDepth != water.waterDepth
+            || currentBlockData.waterSurfaceColor != water.waterSurfaceColor) {
+            currentBlockData.waterDepth        = water.waterDepth;
+            currentBlockData.waterSurfaceColor = water.waterSurfaceColor;
+            changed                            = true;
         }
         if (currentBlockData.height != heightVal) {
             currentBlockData.height = static_cast<std::int16_t>(heightVal);

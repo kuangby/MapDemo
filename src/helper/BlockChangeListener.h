@@ -44,13 +44,13 @@ public:
 
         // 只重扫变化的这一列；chunk 基础数据未初始化或命中占位符时回退整 chunk 扫描
         bool hitPlaceholder = false;
-        // if (!TerrainScanner::getInstance().scanColumn(&source, chunkPos, ChunkWorldPos(worldPos), hitPlaceholder)
-        //     || hitPlaceholder) {
-        //     bool unused;
-        //     TerrainScanner::getInstance().scanChunk(&source, chunkPos, unused);
-        // }
+        if (!TerrainScanner::getInstance().scanColumn(&source, chunkPos, ChunkWorldPos(worldPos), hitPlaceholder)
+            || hitPlaceholder) {
+            bool unused;
+            TerrainScanner::getInstance().scanChunk(&source, chunkPos, unused);
+        }
 
-        TerrainScanner::getInstance().scanChunk(&source, chunkPos, hitPlaceholder);
+        // TerrainScanner::getInstance().scanChunk(&source, chunkPos, hitPlaceholder);
     }
 
 public:

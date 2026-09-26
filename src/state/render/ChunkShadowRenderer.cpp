@@ -35,7 +35,6 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data, bool
     }
 
     auto& cfg = config::getConfig().terrain.shadow;
-    if (config::getConfig().terrain.enableTransparentWater) applyWaterOverlay();
 
     heightQueryCount = 0;
     heightQueryMiss  = 0;
@@ -55,6 +54,9 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data, bool
         }
     }
 
+    // 阴影/bevel 已作用于固体色，水面最后叠加（style1/style2/softOnly 路径统一覆盖）
+    if (config::getConfig().terrain.enableTransparentWater) applyWaterOverlay();
+
     // bake 结束、写回之前：把 bake 结果写入大地图 region 缓存（当前为 bake 工作线程，缓存内部加锁）
     if (handlingChunk) {
         WorldMapCacheManager::getInstance().updateFromChunkBake(handlingChunkPos, *handlingChunk);
@@ -65,11 +67,10 @@ void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data, bool
         std::unique_lock<std::shared_mutex> lock(data->mutex_);
         for (int chunkWorldZ = 0; chunkWorldZ < 16; chunkWorldZ++) {
             for (int chunkWorldX = 0; chunkWorldX < 16; chunkWorldX++) {
-                auto& blockData            = data->blocksData[chunkWorldZ][chunkWorldX];
-                auto& shadowBlockData      = handlingChunk->blocksData[chunkWorldZ][chunkWorldX];
-                blockData.bakedColor       = shadowBlockData.color;
-                if (resampled && !shadowDataChanged
-                    && blockData.shadowOriginData != shadowBlockData.shadowOriginData) {
+                auto& blockData       = data->blocksData[chunkWorldZ][chunkWorldX];
+                auto& shadowBlockData = handlingChunk->blocksData[chunkWorldZ][chunkWorldX];
+                blockData.bakedColor  = shadowBlockData.color;
+                if (resampled && !shadowDataChanged && blockData.shadowOriginData != shadowBlockData.shadowOriginData) {
                     shadowDataChanged = true;
                 }
                 blockData.shadowOriginData = std::move(shadowBlockData.shadowOriginData);
@@ -130,16 +131,17 @@ void ChunkShadowRenderer::applyStyle1() {
     }
 }
 
+// 水面叠加：阴影/bevel 之后执行，水色按水深盖在固体色上，不被地形阴影压暗
 void ChunkShadowRenderer::applyWaterOverlay() {
-    // for (int z = 0; z < ShadowRegion::SIZE; ++z) {
-    //     for (int x = 0; x < ShadowRegion::SIZE; ++x) {
-    //         const auto& info = getInfo(x, z);
-    //         if (info.waterDepth == 0) continue;
-
-    //         float opacity = std::min(0.15f * static_cast<float>(info.waterDepth), 0.85f);
-    //         setPixel(x, z, blendColors(getPixel(x, z), info.waterSurfaceColor, opacity));
-    //     }
-    // }
+    if (!handlingChunk) return;
+    for (int chunkWorldZ = 0; chunkWorldZ < 16; ++chunkWorldZ) {
+        for (int chunkWorldX = 0; chunkWorldX < 16; ++chunkWorldX) {
+            auto& block = handlingChunk->blocksData[chunkWorldZ][chunkWorldX];
+            if (!block.waterDepth) continue;
+            float opacity = std::min(0.1f * static_cast<float>(block.waterDepth), 0.6f);
+            block.color   = blendColors(block.color, block.waterSurfaceColor, opacity);
+        }
+    }
 }
 
 void ChunkShadowRenderer::applyShadowMap(int scale) {
@@ -196,7 +198,7 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                                 && handlingBlockData.height >= westBlock->height
                                 && handlingBlockData.height >= northBlock->height
                                 && handlingBlockData.height >= northWestBlock->height;
-                    int h = handlingBlockData.height;
+                    int  h       = handlingBlockData.height;
 
                     for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                         float westShadowData = 0.0f;
@@ -218,11 +220,11 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                                 continue;
                             }
 
-                            float offsetX = static_cast<float>(blockX)
-                                          + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
-                            float offsetZ = static_cast<float>(blockZ)
-                                          + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
-                            auto lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
+                            float offsetX       = static_cast<float>(blockX)
+                                                + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
+                            float offsetZ       = static_cast<float>(blockZ)
+                                                + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
+                            auto  lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
                             for (int s = 1; s <= kMaxSteps; ++s) {
                                 // 负坐标下 static_cast<int> 会向零截断，必须用 floor 保证采样到正确方块
                                 int sx = static_cast<int>(std::floor(offsetX + static_cast<float>(s) * sdx));
@@ -262,11 +264,11 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
 
                     for (int scaleZ = 0; scaleZ < scale; scaleZ++) {
                         for (int scaleX = 0; scaleX < scale; scaleX++) {
-                            float offsetX = static_cast<float>(blockX)
-                                          + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
-                            float offsetZ = static_cast<float>(blockZ)
-                                          + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
-                            auto lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
+                            float offsetX       = static_cast<float>(blockX)
+                                                + (static_cast<float>(scaleX) + 0.5f) / static_cast<float>(scale);
+                            float offsetZ       = static_cast<float>(blockZ)
+                                                + (static_cast<float>(scaleZ) + 0.5f) / static_cast<float>(scale);
+                            auto  lastOffsetPos = WorldPos{0x7fffffff, 0x7fffffff, dimId};
                             for (int s = 1; s <= kMaxSteps * scale; ++s) {
                                 // 负坐标下 static_cast<int> 会向零截断，必须用 floor 保证采样到正确方块
                                 int sx = static_cast<int>(std::floor(offsetX + static_cast<float>(s) * sdx));
@@ -297,7 +299,7 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
 
 // PCF 柔化：对 shadowOriginData 做 box blur 并汇总到颜色；可独立于采样复用（柔化级重烘）
 void ChunkShadowRenderer::applyShadowBlur(int scale) {
-    auto& cfg = config::getConfig().terrain.shadow;
+    auto& cfg   = config::getConfig().terrain.shadow;
     int   dimId = handlingChunkPos.dimId;
 
     const int pcfRadius = std::clamp(cfg.pcfRadius, 0, 8);

@@ -53,7 +53,7 @@ jobs:
       - id: extract-release-notes
         uses: ffurrer2/extract-release-notes@v2
 
-      - uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v3
         with:
           body: |
             ${{ steps.extract-release-notes.outputs.release_notes }}

@@ -48,16 +48,23 @@ HWND              g_hWnd = nullptr;
 std::atomic<bool> g_initialized{false};
 GraphicsAPI       g_currentAPI = GraphicsAPI::Unknown;
 
+// shutdown 标志：置位后渲染 hook 立即短路，不再触碰 ImGui/D3D 资源与缓存
+std::atomic<bool> g_shuttingDown{false};
+// 已进入渲染路径的帧计数：shutdown 释放资源前等待其归零
+std::atomic<int> g_renderInFlight{0};
+
 // 窗口过程子类化：游戏在 WM_SETCURSOR 里把光标设为隐藏光标，
 // 大地图打开时拦截该消息强制显示箭头光标
 WNDPROC g_origWndProc = nullptr;
 
 LRESULT CALLBACK wndProcHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_SETCURSOR && MapState::getInstance().showWorldMap) {
+    if (!g_shuttingDown.load(std::memory_order_acquire) && msg == WM_SETCURSOR
+        && MapState::getInstance().showWorldMap) {
         SetCursor(LoadCursorW(nullptr, IDC_ARROW));
         return TRUE;
     }
-    return CallWindowProcW(g_origWndProc, hwnd, msg, wParam, lParam);
+    if (g_origWndProc) return CallWindowProcW(g_origWndProc, hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 void installWndProcHook() {
@@ -70,8 +77,12 @@ void installWndProcHook() {
 
 void removeWndProcHook() {
     if (g_hWnd && g_origWndProc) {
-        SetWindowLongPtrW(g_hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_origWndProc));
-        g_origWndProc = nullptr;
+        // 仅当链顶仍是我们的 hook 时才还原：若其他 mod 在我们之后又子类化了同一窗口，
+        // 硬写会把它从链上摘掉；此时保留链不动，wndProcHook 自身靠 g_shuttingDown 直通
+        if (GetWindowLongPtrW(g_hWnd, GWLP_WNDPROC) == reinterpret_cast<LONG_PTR>(&wndProcHook)) {
+            SetWindowLongPtrW(g_hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_origWndProc));
+            g_origWndProc = nullptr;
+        }
     }
 }
 
@@ -220,6 +231,15 @@ void renderImGuiFrame(ID3D11RenderTargetView* rtv) {
 }
 
 void RenderImGui(IDXGISwapChain* pSwapChain) {
+    if (g_shuttingDown.load(std::memory_order_acquire)) return;
+
+    g_renderInFlight.fetch_add(1, std::memory_order_acq_rel);
+    struct InFlightGuard {
+        ~InFlightGuard() { g_renderInFlight.fetch_sub(1, std::memory_order_acq_rel); }
+    } guard;
+    // 计数后再查一次：关闭恰好落在两次检查之间时，避免在资源释放后仍继续渲染
+    if (g_shuttingDown.load(std::memory_order_acquire)) return;
+
     if (!g_initialized) {
         if (!initGraphics(pSwapChain)) return;
     }
@@ -297,6 +317,8 @@ HRESULT __stdcall hkPresent1(
 } // namespace
 
 bool init() {
+    g_shuttingDown.store(false, std::memory_order_release);
+
     HWND hwnd = FindWindowW(L"Minecraft", NULL);
     if (!hwnd) hwnd = GetForegroundWindow();
     if (!hwnd) return false;
@@ -407,6 +429,13 @@ bool init() {
 }
 
 void shutdown() {
+    // 先短路渲染路径，再等待已进来的帧退出，之后才能安全释放 ImGui/D3D 资源
+    g_shuttingDown.store(true, std::memory_order_release);
+    // 最多等 2s：渲染线程若已随客户端关闭卡死，不能让 disable 跟着挂死
+    for (int i = 0; i < 200 && g_renderInFlight.load(std::memory_order_acquire) > 0; ++i) {
+        Sleep(10);
+    }
+
     if (g_targetPresent && g_detourPresent) {
         ll::memory::unhook(g_targetPresent, g_detourPresent);
     }

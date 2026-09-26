@@ -57,9 +57,12 @@ bool CoralMap::enable() {
 
 bool CoralMap::disable() {
     InputBlocker::unregisterListeners();
-    WorldMapCacheManager::getInstance().shutdown();
+    // 先摘 hook：渲染线程不再进入本 mod 代码，DX11Hook::shutdown 内会等 in-flight 帧退出
     unregisterAllHooks();
+    // 再停 bake 工作线程：hook 已摘，不会再有新任务入队，join 有界
     RendererManager::getInstance().shutdown();
+    // 最后停缓存：同步刷盘期间已无任何线程访问缓存
+    WorldMapCacheManager::getInstance().shutdown();
     TerrainScanner::getInstance().shutdown();
     return true;
 }

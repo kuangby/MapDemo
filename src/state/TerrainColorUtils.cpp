@@ -1,6 +1,7 @@
 #include "state/TerrainColorUtils.h"
 
 #include "config/Config.h"
+#include "state/BiomeColorMap.h"
 
 #include "mc/world/level/dimension/Dimension.h"
 #include <mc/world/level/BlockPos.h>
@@ -71,11 +72,14 @@ static BlockColor getBlockMapColor(LevelChunk* chunk, BlockSource& source, Chunk
 // 无方块可取时的 fallback 颜色（透明）
 static BlockColor getEmptyColor() { return BlockColor{0, 0, 0, 0}; }
 
-// 虚空（整列无方块）时显示的颜色：群系草地色（与地图上草地方块同色）
+// 虚空（整列无方块）时显示的颜色：优先取 biome_color.json 中的群系 rgb 代表色，
+// 缺失时回退到游戏内群系草地色采样（与地图上草地方块同色）
 static BlockColor getBiomeVoidColor(LevelChunk* chunk, ChunkWorldPos pos, int minY) {
     ChunkBlockPos localPos(static_cast<uchar>(pos.x), ChunkLocalHeight{0}, static_cast<uchar>(pos.z));
-    BlockPos      worldPos(chunk->mPosition->x * 16 + pos.x, minY, chunk->mPosition->z * 16 + pos.z);
-    int           argb = BiomeColorSampling::getMapGrassColor(chunk->getBiome(localPos), worldPos);
+    Biome const&  biome = chunk->getBiome(localPos);
+    if (auto color = BiomeColorMap::getInstance().rgbOf(biome.mHash->getString())) return *color;
+    BlockPos worldPos(chunk->mPosition->x * 16 + pos.x, minY, chunk->mPosition->z * 16 + pos.z);
+    int      argb = BiomeColorSampling::getMapGrassColor(biome, worldPos);
     return BlockColor{
         static_cast<std::uint8_t>((argb >> 16) & 0xFF),
         static_cast<std::uint8_t>((argb >> 8) & 0xFF),

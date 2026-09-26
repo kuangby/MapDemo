@@ -44,3 +44,9 @@ target("MapDemo") -- Change this to your mod name.
     add_files("src/**.cpp")
     add_includedirs("src")
     add_defines("LL_PLAT_C")
+
+    -- 把 resource/（biome_color.json 等数据文件）随 mod 一起输出到 bin/MapDemo/
+    after_build(function(target)
+        local outputdir = path.join(os.projectdir(), "bin", target:name())
+        os.cp(path.join(os.projectdir(), "resource"), path.join(outputdir, "resource"))
+    end)

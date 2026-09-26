@@ -172,6 +172,7 @@ void RegionShadowRenderer::applyStyle1() {
 
 // 水面叠加：阴影/bevel 之后执行，水色按水深盖在固体色上，不被地形阴影压暗
 void RegionShadowRenderer::applyWaterOverlay() {
+    auto& cfg = config::getConfig().terrain;
     for (int regionChunkZ = 0; regionChunkZ < 16; ++regionChunkZ) {
         for (int regionChunkX = 0; regionChunkX < 16; ++regionChunkX) {
             auto chunk = handlingRegion[regionChunkZ][regionChunkX];
@@ -180,8 +181,12 @@ void RegionShadowRenderer::applyWaterOverlay() {
                 for (int chunkWorldX = 0; chunkWorldX < 16; ++chunkWorldX) {
                     auto& block = chunk->blocksData[chunkWorldZ][chunkWorldX];
                     if (!block.waterDepth) continue;
-                    float opacity = std::min(0.1f * static_cast<float>(block.waterDepth), 0.6f);
-                    block.color   = blendColors(block.color, block.waterSurfaceColor, opacity);
+                    float opacity = std::clamp(
+                        cfg.waterOpacityPerDepth * static_cast<float>(block.waterDepth),
+                        0.0f,
+                        cfg.waterMaxOpacity
+                    );
+                    block.color = blendColors(block.color, block.waterSurfaceColor, opacity);
                 }
             }
         }

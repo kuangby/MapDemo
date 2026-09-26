@@ -134,12 +134,17 @@ void ChunkShadowRenderer::applyStyle1() {
 // 水面叠加：阴影/bevel 之后执行，水色按水深盖在固体色上，不被地形阴影压暗
 void ChunkShadowRenderer::applyWaterOverlay() {
     if (!handlingChunk) return;
+    auto& cfg = config::getConfig().terrain;
     for (int chunkWorldZ = 0; chunkWorldZ < 16; ++chunkWorldZ) {
         for (int chunkWorldX = 0; chunkWorldX < 16; ++chunkWorldX) {
             auto& block = handlingChunk->blocksData[chunkWorldZ][chunkWorldX];
             if (!block.waterDepth) continue;
-            float opacity = std::min(0.1f * static_cast<float>(block.waterDepth), 0.6f);
-            block.color   = blendColors(block.color, block.waterSurfaceColor, opacity);
+            float opacity = std::clamp(
+                cfg.waterOpacityPerDepth * static_cast<float>(block.waterDepth),
+                0.0f,
+                cfg.waterMaxOpacity
+            );
+            block.color = blendColors(block.color, block.waterSurfaceColor, opacity);
         }
     }
 }

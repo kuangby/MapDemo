@@ -106,6 +106,12 @@ struct TerrainConfig {
     // 是否启用透明水效果
     bool enableTransparentWater = true;
 
+    // 透明水混合：每格水深增加的透明度
+    float waterOpacityPerDepth = 0.1f;
+
+    // 透明水混合：透明度上限
+    float waterMaxOpacity = 0.6f;
+
     ShadowConfig shadow;
 };
 

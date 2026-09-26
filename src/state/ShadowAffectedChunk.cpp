@@ -175,8 +175,8 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
     for (int i = 0; i < 4; ++i) {
         if (i == upstreamIdx) continue;
         // 排他边界角点夹取到矩形内，重复原点只追踪一次
-        int  ox  = std::clamp(corners[i].first, x0, x1 - 1);
-        int  oz  = std::clamp(corners[i].second, z0, z1 - 1);
+        int  ox  = std::clamp(corners[i].first, x0, x1);
+        int  oz  = std::clamp(corners[i].second, z0, z1);
         bool dup = false;
         for (int j = 0; j < tracedCount; ++j) {
             if (tracedOrigins[j].first == ox && tracedOrigins[j].second == oz) {

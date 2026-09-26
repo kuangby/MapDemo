@@ -45,8 +45,10 @@ target("CoralMap") -- Change this to your mod name.
     add_includedirs("src")
     add_defines("LL_PLAT_C")
 
-    -- 把 resource/（biome_color.json 等数据文件）随 mod 一起输出到 bin/CoralMap/
+    -- 把 resource/ 下的 json 数据文件随 mod 一起输出到 bin/CoralMap/resource/（showcase 等图片不打包）
     after_build(function(target)
-        local outputdir = path.join(os.projectdir(), "bin", target:name())
-        os.cp(path.join(os.projectdir(), "resource"), path.join(outputdir, "resource"))
+        local outputdir = path.join(os.projectdir(), "bin", target:name(), "resource")
+        os.rm(outputdir)
+        os.mkdir(outputdir)
+        os.cp(path.join(os.projectdir(), "resource", "*.json"), outputdir)
     end)

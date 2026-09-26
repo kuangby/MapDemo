@@ -32,9 +32,9 @@ void traceRay(
     auto curZ = static_cast<float>(originZ);
     // 按方向做 epsilon 偏移计算初始 chunk：原点恰在边界且方向分量为负时，
     // 射线立即进入相邻 chunk，避免 t=0 被钳制后步进卡死
-    const float eps = 1e-4f;
-    int curChunkX = static_cast<int>(std::floor((curX + (dirX >= 0.0f ? eps : -eps)) / 16.0f));
-    int curChunkZ = static_cast<int>(std::floor((curZ + (dirZ >= 0.0f ? eps : -eps)) / 16.0f));
+    const float eps       = 1e-4f;
+    int         curChunkX = static_cast<int>(std::floor((curX + (dirX >= 0.0f ? eps : -eps)) / 16.0f));
+    int         curChunkZ = static_cast<int>(std::floor((curZ + (dirZ >= 0.0f ? eps : -eps)) / 16.0f));
 
     float dist = 0.0f;
 
@@ -57,11 +57,11 @@ void traceRay(
             );
 
             // 射线起点到该 chunk 的最远角
-            int  farX = std::abs(originX - chunkMinX) > std::abs(originX - chunkMaxX) ? chunkMinX : chunkMaxX;
-            int  farZ = std::abs(originZ - chunkMinZ) > std::abs(originZ - chunkMaxZ) ? chunkMinZ : chunkMaxZ;
-            auto maxDistance =
-                static_cast<float>(std::sqrt((farX - originX) * (farX - originX) + (farZ - originZ) * (farZ - originZ))
-                );
+            int  farX        = std::abs(originX - chunkMinX) > std::abs(originX - chunkMaxX) ? chunkMinX : chunkMaxX;
+            int  farZ        = std::abs(originZ - chunkMinZ) > std::abs(originZ - chunkMaxZ) ? chunkMinZ : chunkMaxZ;
+            auto maxDistance = static_cast<float>(
+                std::sqrt((farX - originX) * (farX - originX) + (farZ - originZ) * (farZ - originZ))
+            );
 
             auto chunkData = mapCacheManager.getChunk(chunk);
             // 未扫描的 chunk 高度统计无效（min/max 为默认值），不参与裁剪；
@@ -133,7 +133,7 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
         WorldPos{x0, z0, dimId}
     };
     auto maxChunk = ChunkPosWithDim{
-        WorldPos{x1 - 1, z1 - 1, dimId}
+        WorldPos{x1, z1, dimId}
     };
     for (int cz = minChunk.z; cz <= maxChunk.z; ++cz) {
         for (int cx = minChunk.x; cx <= maxChunk.x; ++cx) {
@@ -148,43 +148,38 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
     if (std::abs(dirX) < 1e-5f) dirX = 0.0f;
     if (std::abs(dirZ) < 1e-5f) dirZ = 0.0f;
 
-    // 角点与下游方向做点积，值最大者为下游（光线方向）角点；
-    // 方向与区块线平行时下游为整条边（2 个角点并列），一并排除
+    // 角点与下游方向做点积，值最小者为上游（迎光）角点；从下游侧其余 3 个角点
+    // 沿光线方向各发一条射线。方向与区块线平行时 2 个角点并列上游，取其一排除，
+    // 仍发 3 条射线（另一个上游角点的射线沿阴影带边界，仍然有效）
     const std::pair<int, int> corners[4] = {
         {x0, z0},
         {x1, z0},
         {x0, z1},
         {x1, z1}
     };
-    float maxDot = std::numeric_limits<float>::lowest();
-    for (auto& [cx, cz] : corners) {
-        float dot = static_cast<float>(cx) * dirX + static_cast<float>(cz) * dirZ;
-        if (dot > maxDot) maxDot = dot;
+    int   upstreamIdx = 0;
+    float minDot      = std::numeric_limits<float>::max();
+    for (int i = 0; i < 4; ++i) {
+        float dot = static_cast<float>(corners[i].first) * dirX + static_cast<float>(corners[i].second) * dirZ;
+        if (dot < minDot) {
+            minDot      = dot;
+            upstreamIdx = i;
+        }
     }
 
     WorldPos pos{x0, z0, dimId}; // traceRay 仅使用其 dimId
-    float    maxDist = 96.0f;
+    float    maxDist = 112.0f;
 
-    std::pair<int, int> downstreamCorners[2];
-    int                 downstreamCount = 0;
-    std::pair<int, int> tracedOrigins[2];
+    std::pair<int, int> tracedOrigins[3];
     int                 tracedCount = 0;
-    for (auto& [cx, cz] : corners) {
-        float dot = static_cast<float>(cx) * dirX + static_cast<float>(cz) * dirZ;
-        if (dot >= maxDot - 1e-4f) {
-            // 下游角点夹取到矩形内，供终点 chunk 判定使用
-            downstreamCorners[downstreamCount++] = {
-                std::clamp(cx, x0, x1 - 1),
-                std::clamp(cz, z0, z1 - 1)
-            };
-            continue;
-        }
-        // 非下游角点作为射线原点；排他边界角点夹取到矩形内，重复原点只追踪一次
-        int ox = std::clamp(cx, x0, x1 - 1);
-        int oz = std::clamp(cz, z0, z1 - 1);
+    for (int i = 0; i < 4; ++i) {
+        if (i == upstreamIdx) continue;
+        // 排他边界角点夹取到矩形内，重复原点只追踪一次
+        int  ox  = std::clamp(corners[i].first, x0, x1 - 1);
+        int  oz  = std::clamp(corners[i].second, z0, z1 - 1);
         bool dup = false;
-        for (int i = 0; i < tracedCount; ++i) {
-            if (tracedOrigins[i].first == ox && tracedOrigins[i].second == oz) {
+        for (int j = 0; j < tracedCount; ++j) {
+            if (tracedOrigins[j].first == ox && tracedOrigins[j].second == oz) {
                 dup = true;
                 break;
             }
@@ -192,52 +187,6 @@ std::vector<ChunkPosWithDim> getAffectedChunksForRect(
         if (dup) continue;
         tracedOrigins[tracedCount++] = {ox, oz};
         traceRay(res, visited, pos, ox, oz, dirX, dirZ, maxDist, higherHeight, lowerHeight, tanZenith);
-    }
-
-    // 阴影终点方块（扫掠区域最前角点）所在 chunk 可能不被任何一条射线覆盖，单独判定
-    for (int i = 0; i < downstreamCount; ++i) {
-        int endX = static_cast<int>(
-            std::floor(static_cast<float>(downstreamCorners[i].first) + maxDist * dirX)
-        );
-        int endZ = static_cast<int>(
-            std::floor(static_cast<float>(downstreamCorners[i].second) + maxDist * dirZ)
-        );
-
-        auto farChunk = ChunkPosWithDim{
-            WorldPos{endX, endZ, dimId}
-        };
-        if (!visited.emplace(farChunk).second) continue;
-
-        int chunkMinX = farChunk.x * 16;
-        int chunkMaxX = farChunk.x * 16 + 16;
-        int chunkMinZ = farChunk.z * 16;
-        int chunkMaxZ = farChunk.z * 16 + 16;
-
-        // 终点方块到该 chunk 的最近点；阴影高度按距射线原点（下游角点）计算，需加上 maxDist
-        int   closestX    = std::clamp(endX, chunkMinX, chunkMaxX);
-        int   closestZ    = std::clamp(endZ, chunkMinZ, chunkMaxZ);
-        float minDistance = maxDist
-                          + static_cast<float>(std::sqrt(
-                                (closestX - endX) * (closestX - endX) + (closestZ - endZ) * (closestZ - endZ)
-                            ));
-
-        // 终点方块到该 chunk 的最远角
-        int   farX        = std::abs(endX - chunkMinX) > std::abs(endX - chunkMaxX) ? chunkMinX : chunkMaxX;
-        int   farZ        = std::abs(endZ - chunkMinZ) > std::abs(endZ - chunkMaxZ) ? chunkMinZ : chunkMaxZ;
-        float maxDistance = maxDist
-                          + static_cast<float>(
-                                std::sqrt((farX - endX) * (farX - endX) + (farZ - endZ) * (farZ - endZ))
-                            );
-
-        auto chunkData = MapCacheManager::getInstance().getChunk(farChunk);
-        bool affected  = chunkData && chunkData->loadChunkBaseData
-                    && static_cast<float>(higherHeight) - minDistance * tanZenith
-                           > static_cast<float>(chunkData->minHeight)
-                    && static_cast<float>(lowerHeight) - maxDistance * tanZenith
-                           < static_cast<float>(chunkData->maxHeight);
-        if (affected) {
-            res.emplace_back(farChunk);
-        }
     }
 
     return res;

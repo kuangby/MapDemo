@@ -55,10 +55,10 @@ public:
     [[nodiscard]] std::uint64_t totalFrames() const { return totalFrames_; }
 
     // 扫描单个 chunk 并写入缓存（供周期调度与方块变化触发的即时重扫使用）
-    // outHitPlaceholder：存在仍为占位符的子区块，或扫描过程中遇到
-    // client_request_placeholder_block 时置 true，此时不更新 lastScanFrame，
+    // 占位符按列跳过（与客户端按子区块层渲染的粒度一致）：某列表面所在子区块
+    // 仍为占位符时保留该列旧数据并置 outHitPlaceholder，此时不更新 lastScanFrame，
     // 调用方应按短延迟安排重扫
-    // 返回 false 表示本次未扫描（chunk 未加载，或含有占位子区块）
+    // 返回 false 表示 chunk 未加载，本次未扫描
     bool scanChunk(BlockSource* region, const ChunkPosWithDim& key, bool& outHitPlaceholder) const;
 
     // 只扫描 chunk 内的单个 XZ 列（方块变化触发，避免整 chunk 重扫）

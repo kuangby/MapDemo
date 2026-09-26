@@ -190,9 +190,12 @@ void ChunkShadowRenderer::applyShadowMap(int scale) {
                     if (!blockZ) {
                         if (northChunk) northBlock = &northChunk->getBlockBaseData(ChunkWorldPos{blockX, 15});
                     } else northBlock = &chunk->getBlockBaseData(ChunkWorldPos{blockX, blockZ - 1});
-                    bool canSkip = (!westBlock || handlingBlockData.height >= westBlock->height)
-                                && (!northBlock || handlingBlockData.height >= northBlock->height)
-                                && (!northWestBlock || handlingBlockData.height >= northWestBlock->height);
+                    // 上游邻居缺失/未烘（阴影数据不可信）时不得跳过射线采样：
+                    // 跳过会让边界阴影丢失，而邻居事后烘好只触发 soft 级修正（不重采样），缺失永久残留
+                    bool canSkip = westBlock && northBlock && northWestBlock
+                                && handlingBlockData.height >= westBlock->height
+                                && handlingBlockData.height >= northBlock->height
+                                && handlingBlockData.height >= northWestBlock->height;
                     int h = handlingBlockData.height;
 
                     for (int scaleZ = 0; scaleZ < scale; scaleZ++) {

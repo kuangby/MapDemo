@@ -13,7 +13,7 @@ std::vector<ChunkPosWithDim>
 getAffectedChunk(int oriHeight, int height, WorldPos pos, float azimuth_rad, float zenith_rad);
 
 // 计算矩形区域（方块坐标，[x0,x1) x [z0,z1)）高度变化后阴影可能受影响的 chunk 列表
-// 根据光线方向选取非下游角点作为射线原点（对角方向 3 个，与区块线平行时 2 个）
+// 排除迎光的上游角点，从下游侧其余 3 个角点沿光线方向各发一条射线检测
 // higherHeight/lowerHeight 取区域变化后的最高/最低高度
 std::vector<ChunkPosWithDim> getAffectedChunksForRect(
     int   x0,

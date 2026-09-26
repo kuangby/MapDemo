@@ -188,10 +188,20 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
 
     outHitPlaceholder = false;
 
-    // 子区块预检：任何一个子区块仍是占位符（服务器数据未到达）就放弃整个 chunk，
-    // 由调用方按短延迟重新入队，避免扫出半黑半真的混合数据
-    for (const auto& subChunk : chunk->mSubChunks.get()) {
-        if (subChunk.isPlaceHolderSubChunk()) {
+    // 无数据 chunk 预检：高度表全部停在世界最高点（mVal>>4 越出子区块范围）
+    // 说明服务端数据完全未到，直接跳过本次扫描，按占位符语义短延迟重扫，
+    // 避免 256 列的空遍历与幻影高度写入
+    {
+        const auto& heightmap     = chunk->mHeightmap.get();
+        const int   subChunkCount = static_cast<int>(chunk->mSubChunks.get().size());
+        bool        noDataAtAll   = true;
+        for (int i = 0; i < 256; ++i) {
+            if ((static_cast<int>(heightmap[i].mVal) >> 4) < subChunkCount) {
+                noDataAtAll = false;
+                break;
+            }
+        }
+        if (noDataAtAll) {
             outHitPlaceholder = true;
             return false;
         }
@@ -224,8 +234,24 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
         std::unique_lock<std::shared_mutex> lock(chunkData->mutex_);
         oldMinHeight = chunkData->minHeight;
         oldMaxHeight = chunkData->maxHeight;
+        const auto& subChunks = chunk->mSubChunks.get();
         for (int chunkWorldPosZ = 0; chunkWorldPosZ < 16; ++chunkWorldPosZ) {
             for (int chunkWorldPosX = 0; chunkWorldPosX < 16; ++chunkWorldPosX) {
+                int idx       = chunkWorldPosZ * 16 + chunkWorldPosX;
+                int heightVal = chunk->mHeightmap.get()[idx].mVal + minY;
+
+                // 与客户端渲染粒度一致（LevelBuilder::tryRebuild 按 Y 层判定）：
+                // 该列表面所在子区块仍是占位符时只跳过本列，保留旧数据，
+                // 置 outHitPlaceholder 触发短延迟重扫；其余列照常写入。
+                // 高度表停在世界最高点时 relIdx 越界，说明该列没有任何数据，
+                // 钳制到顶层子区块判定（无数据列顶层必为占位符），避免把幻影高度写入缓存
+                int relIdx = (heightVal - minY) >> 4;
+                if (relIdx >= static_cast<int>(subChunks.size())) relIdx = static_cast<int>(subChunks.size()) - 1;
+                if (relIdx >= 0 && subChunks[relIdx].isPlaceHolderSubChunk()) {
+                    outHitPlaceholder = true;
+                    continue;
+                }
+
                 auto color = getTerrainPixelAtCameraHeight(
                     chunk,
                     {chunkWorldPosX, chunkWorldPosZ},
@@ -233,9 +259,6 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                     outHitPlaceholder
                 );
 
-                int idx = chunkWorldPosZ * 16 + chunkWorldPosX;
-
-                int heightVal = chunk->mHeightmap.get()[idx].mVal + minY;
                 if (heightVal < chunkMinHeight) chunkMinHeight = heightVal;
                 if (heightVal > chunkMaxHeight) chunkMaxHeight = heightVal;
 
@@ -270,8 +293,11 @@ bool TerrainScanner::scanChunk(BlockSource* region, const ChunkPosWithDim& key, 
                 }
             }
         }
-        chunkData->minHeight = chunkMinHeight;
-        chunkData->maxHeight = chunkMaxHeight;
+        // 所有列都因占位符被跳过时统计无效（min>max），保留旧值
+        if (chunkMinHeight <= chunkMaxHeight) {
+            chunkData->minHeight = chunkMinHeight;
+            chunkData->maxHeight = chunkMaxHeight;
+        }
         // 命中占位符时不更新 lastScanFrame，保证短延迟重试不被 needScan 检查跳过
         if (!outHitPlaceholder) {
             chunkData->lastScanFrame = totalFrames_;

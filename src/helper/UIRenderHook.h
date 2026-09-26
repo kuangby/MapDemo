@@ -7,7 +7,7 @@
 
 #include "helper/DX11Hook.h"
 
-namespace map_demo {
+namespace coral_map {
 
 inline std::once_flag g_initOnce;
 
@@ -25,4 +25,4 @@ LL_TYPE_INSTANCE_HOOK(
     std::call_once(g_initOnce, [] { DX11Hook::init(); });
 }
 
-} // namespace map_demo
+} // namespace coral_map

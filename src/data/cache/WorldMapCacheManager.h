@@ -22,7 +22,7 @@
 class ClientInstance;
 class LocalPlayer;
 
-namespace map_demo {
+namespace coral_map {
 
 class ShadowRenderChunkData;
 
@@ -96,4 +96,4 @@ private:
     std::atomic<bool> ioStop_{false};
 };
 
-} // namespace map_demo
+} // namespace coral_map

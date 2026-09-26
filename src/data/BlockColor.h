@@ -3,7 +3,7 @@
 #include <cstdint>
 
 
-namespace map_demo {
+namespace coral_map {
 struct BlockColor {
     std::uint8_t r{0};
     std::uint8_t g{0};
@@ -15,4 +15,4 @@ struct BlockColor {
     }
     bool operator!=(const BlockColor& other) const noexcept { return !(*this == other); }
 };
-} // namespace map_demo
+} // namespace coral_map

@@ -9,7 +9,7 @@
 
 class BlockSource;
 
-namespace map_demo {
+namespace coral_map {
 
 // 透明水拆分结果：固体色与水面信息分开，水面在烘焙期阴影之后叠加
 struct WaterSplit {
@@ -42,4 +42,4 @@ BlockColor getTerrainPixelAtCameraHeight(
     WaterSplit*   outWater = nullptr
 );
 
-} // namespace map_demo
+} // namespace coral_map

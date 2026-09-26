@@ -15,7 +15,7 @@
 #include <thread>
 #include <unordered_set>
 
-namespace map_demo {
+namespace coral_map {
 
 // 渲染管理器：只负责 bake 任务的调度（工作线程 + 任务队列）
 class RendererManager {
@@ -66,4 +66,4 @@ private:
     bool                                       stop_{false};
 };
 
-} // namespace map_demo
+} // namespace coral_map

@@ -3,7 +3,7 @@
 #include <vector>
 
 
-namespace map_demo {
+namespace coral_map {
 
 struct ChunkBounds {
     float minX;
@@ -30,4 +30,4 @@ public:
     [[nodiscard]] static bool isPointInChunk(float worldX, float worldZ, int chunkX, int chunkZ);
 };
 
-} // namespace map_demo
+} // namespace coral_map

@@ -6,7 +6,7 @@
 #include <string>
 
 
-namespace map_demo {
+namespace coral_map {
 class ShadowRenderBlockData : public BlockDataBase {
 public:
     std::string   blockName;         // 显示用的方块名
@@ -23,4 +23,4 @@ public:
       waterDepth(cacheData.waterDepth),
       waterSurfaceColor(cacheData.waterSurfaceColor) {}
 };
-} // namespace map_demo
+} // namespace coral_map

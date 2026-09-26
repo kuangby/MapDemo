@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace map_demo {
+namespace coral_map {
 
 // 计算方块高度变化后阴影可能受影响的 chunk 列表（含自身 chunk）；角度为弧度制
 std::vector<ChunkPosWithDim>
@@ -38,4 +38,4 @@ void markSoftDirty(const ChunkPosWithDim& pos);
 // 将 center 的 8 邻接 chunk 标记为 softDirty（邻居的柔化/bevel 依赖本 chunk 的边缘数据）
 void markRingSoftDirty(const ChunkPosWithDim& center);
 
-} // namespace map_demo
+} // namespace coral_map

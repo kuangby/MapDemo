@@ -13,7 +13,7 @@
 #include <atomic>
 #include <chrono>
 
-namespace map_demo::DX11Hook {
+namespace coral_map::DX11Hook {
 
 namespace {
 
@@ -441,4 +441,4 @@ ID3D11DeviceContext* getContext() { return g_pd3d11DeviceContext; }
 
 HWND getHwnd() { return g_hWnd; }
 
-} // namespace map_demo::DX11Hook
+} // namespace coral_map::DX11Hook

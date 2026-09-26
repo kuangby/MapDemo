@@ -4,7 +4,7 @@
 #include "helper/PlayerHook.h"
 #include "helper/UIRenderHook.h"
 
-namespace map_demo {
+namespace coral_map {
 
 void registerAllHooks() {
     ClientInstanceUpdateHook::hook();
@@ -17,4 +17,4 @@ void unregisterAllHooks() {
     DX11Hook::shutdown();
 }
 
-} // namespace map_demo
+} // namespace coral_map

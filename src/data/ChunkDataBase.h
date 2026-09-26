@@ -4,7 +4,7 @@
 #include "data/pos/ChunkWorldPos.h"
 
 
-namespace map_demo {
+namespace coral_map {
 class ChunkDataBase {
 public:
     int shadowScale = -1;
@@ -19,4 +19,4 @@ public:
 
     [[nodiscard]] virtual const BlockDataBase& getBlockBaseData(const ChunkWorldPos& pos) = delete;
 };
-} // namespace map_demo
+} // namespace coral_map

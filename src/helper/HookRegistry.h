@@ -1,8 +1,8 @@
 #pragma once
 
-namespace map_demo {
+namespace coral_map {
 
 void registerAllHooks();
 void unregisterAllHooks();
 
-} // namespace map_demo
+} // namespace coral_map

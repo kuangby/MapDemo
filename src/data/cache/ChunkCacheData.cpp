@@ -3,7 +3,7 @@
 #include <mutex>
 #include <shared_mutex>
 
-namespace map_demo {
+namespace coral_map {
 void ChunkCacheData::setColor(const ChunkWorldPos& pos, const BlockColor& color) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
     blocksData[pos.z][pos.x].color = color;
@@ -28,4 +28,4 @@ void ChunkCacheData::setColor(const ChunkWorldPos& pos, const BlockColor& color)
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return blocksData[pos.z][pos.x];
 }
-} // namespace map_demo
+} // namespace coral_map

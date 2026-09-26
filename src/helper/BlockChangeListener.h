@@ -17,7 +17,7 @@
 #include <cmath>
 
 
-namespace map_demo {
+namespace coral_map {
 class BlockChangeListener : public BlockSourceListener {
 public:
     void onBlockChanged(
@@ -59,4 +59,4 @@ public:
         return instance;
     }
 };
-} // namespace map_demo
+} // namespace coral_map

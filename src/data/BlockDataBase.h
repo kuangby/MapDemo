@@ -4,7 +4,7 @@
 #include <vector>
 
 
-namespace map_demo {
+namespace coral_map {
 class BlockDataBase {
 public:
     BlockColor                      color;
@@ -15,4 +15,4 @@ public:
 public:
     virtual ~BlockDataBase() = default;
 };
-} // namespace map_demo
+} // namespace coral_map

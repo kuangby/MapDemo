@@ -25,7 +25,7 @@
 #include <limits>
 #include <unordered_set>
 
-namespace map_demo {
+namespace coral_map {
 
 namespace {
 
@@ -528,4 +528,4 @@ void TerrainScanner::update(BlockSource* region, const ChunkPosWithDim& playerCh
     }
 }
 
-} // namespace map_demo
+} // namespace coral_map

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace map_demo::config {
+namespace coral_map::config {
 
 // 小地图渲染配置
 struct MiniMapConfig {
@@ -152,4 +152,4 @@ inline Config& getConfig() {
     return config;
 }
 
-} // namespace map_demo::config
+} // namespace coral_map::config

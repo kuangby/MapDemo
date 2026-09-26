@@ -13,7 +13,7 @@
             "type": "cppvsdbg",
             "request": "attach",
             "processId": "${input:launchAndGetPid_GDK}",
-            "symbolSearchPath": "F:\\project\\levilamina\\MapDemo\\bin\\"
+            "symbolSearchPath": "F:\\project\\levilamina\\CoralMap\\bin\\"
         },
         {
             // Automatically starts the BDS target process and attaches the debugger after the process becomes stable.

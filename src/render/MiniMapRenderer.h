@@ -1,6 +1,6 @@
 #pragma once
 
-namespace map_demo {
+namespace coral_map {
 
 class MiniMapRenderer {
 public:
@@ -15,4 +15,4 @@ private:
     [[nodiscard]] float getMapRadius() const { return getMapDiameter() * 0.5f; }
 };
 
-} // namespace map_demo
+} // namespace coral_map

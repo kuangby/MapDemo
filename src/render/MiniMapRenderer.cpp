@@ -21,7 +21,7 @@
 #include "state/MapState.h"
 
 
-namespace map_demo {
+namespace coral_map {
 
 MiniMapRenderer& MiniMapRenderer::getInstance() {
     static MiniMapRenderer instance;
@@ -359,4 +359,4 @@ void MiniMapRenderer::render() {
     drawList->AddCircle(center, radius, toImCol32(mmc.borderColor), 64, mmc.borderThickness);
 }
 
-} // namespace map_demo
+} // namespace coral_map

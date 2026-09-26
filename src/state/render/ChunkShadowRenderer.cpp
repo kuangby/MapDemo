@@ -20,7 +20,7 @@
 #include <shared_mutex>
 #include <vector>
 
-namespace map_demo {
+namespace coral_map {
 
 void ChunkShadowRenderer::bake(const std::shared_ptr<ChunkCacheData>& data, bool softOnly) {
     if (!data || !data->loadChunkBaseData) return;
@@ -490,4 +490,4 @@ void ChunkShadowRenderer::applyStyle2() {
     applyBevel(scale);
 }
 
-} // namespace map_demo
+} // namespace coral_map

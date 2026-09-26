@@ -4,7 +4,7 @@
 
 #include <fstream>
 
-namespace map_demo {
+namespace coral_map {
 
 namespace {
 
@@ -60,4 +60,4 @@ std::optional<BlockColor> BiomeColorMap::rgbOf(std::string_view biomeName) const
     return defaultColor_;
 }
 
-} // namespace map_demo
+} // namespace coral_map

@@ -19,7 +19,7 @@
 #include <vector>
 
 
-namespace map_demo {
+namespace coral_map {
 // 区域阴影渲染器：以 region 为单位进行阴影烘焙，16x16 chunks
 class RegionShadowRenderer {
 public:
@@ -85,4 +85,4 @@ private:
     void applyShadowMap(int scale);
     void applyBevel(int scale);
 };
-} // namespace map_demo
+} // namespace coral_map

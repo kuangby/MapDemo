@@ -4,7 +4,7 @@
 #include "mc/world/level/ChunkPos.h"
 
 
-namespace map_demo {
+namespace coral_map {
 class ChunkPosWithDim {
 public:
     int x;
@@ -33,13 +33,13 @@ public:
 
     [[nodiscard]] explicit ChunkPosWithDim(const RegionPos& regionPos, const ChunkPosWithDim& offset) noexcept;
 };
-} // namespace map_demo
+} // namespace coral_map
 
 
 namespace std {
 template <>
-struct hash<map_demo::ChunkPosWithDim> {
-    std::size_t operator()(const map_demo::ChunkPosWithDim& k) const noexcept {
+struct hash<coral_map::ChunkPosWithDim> {
+    std::size_t operator()(const coral_map::ChunkPosWithDim& k) const noexcept {
         std::uint64_t v = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(k.x)) << 32)
                         | static_cast<std::uint64_t>(static_cast<std::uint32_t>(k.z));
         return v ^ (static_cast<std::uint64_t>(k.dimId) << 48);

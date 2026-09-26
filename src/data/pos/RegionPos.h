@@ -4,7 +4,7 @@
 #include "WorldPos.h"
 
 
-namespace map_demo {
+namespace coral_map {
 class RegionPos {
 public:
     int x     = 0;
@@ -32,13 +32,13 @@ public:
         dimId = pos.dimId;
     }
 };
-} // namespace map_demo
+} // namespace coral_map
 
 
 namespace std {
 template <>
-struct hash<map_demo::RegionPos> {
-    std::size_t operator()(const map_demo::RegionPos& p) const noexcept {
+struct hash<coral_map::RegionPos> {
+    std::size_t operator()(const coral_map::RegionPos& p) const noexcept {
         return ((static_cast<std::uint64_t>(static_cast<std::uint32_t>(p.x)) << 32)
                 | static_cast<std::uint64_t>(static_cast<std::uint32_t>(p.z)))
              ^ (static_cast<std::uint64_t>(p.dimId) << 48);

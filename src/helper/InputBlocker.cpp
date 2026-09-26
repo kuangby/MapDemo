@@ -11,7 +11,7 @@
 #include <windows.h>
 
 
-namespace map_demo {
+namespace coral_map {
 
 ll::event::ListenerPtr   InputBlocker::s_keyListener;
 ll::event::ListenerPtr   InputBlocker::s_mouseListener;
@@ -120,4 +120,4 @@ void InputBlocker::closeWorldMap() {
     if (s_clientInstance) s_clientInstance->grabMouse();
 }
 
-} // namespace map_demo
+} // namespace coral_map

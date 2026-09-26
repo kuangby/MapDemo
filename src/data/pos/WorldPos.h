@@ -1,7 +1,7 @@
 #pragma once
 
 
-namespace map_demo {
+namespace coral_map {
 class ChunkPosWithDim;
 class ChunkWorldPos;
 class RegionPos;
@@ -28,4 +28,4 @@ public:
     ) noexcept;
 };
 
-} // namespace map_demo
+} // namespace coral_map

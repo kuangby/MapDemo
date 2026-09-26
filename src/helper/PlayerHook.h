@@ -20,14 +20,14 @@
 #include "data/cache/WorldMapCacheManager.h"
 #include "helper/DX11Hook.h"
 #include "helper/InputBlocker.h"
-#include "mod/MapDemo.h"
+#include "mod/CoralMap.h"
 #include "render/WorldMapRenderer.h"
 #include "state/MapState.h"
 #include "state/TerrainScanner.h"
 #include "state/render/RendererManager.h"
 
 
-namespace map_demo {
+namespace coral_map {
 
 LL_TYPE_INSTANCE_HOOK(
     ClientInstanceUpdateHook,
@@ -67,10 +67,10 @@ LL_TYPE_INSTANCE_HOOK(
             s_listenerSource->addListener(BlockChangeListener::getInstance());
 
             if (config::getConfig().terrain.enableDiskCache) {
-                auto worldPath = MapDemo::getInstance().getSelf().getWorldDataDir();
+                auto worldPath = CoralMap::getInstance().getSelf().getWorldDataDir();
                 auto cachePath = worldPath.has_value()
                                    ? worldPath.value() / "terrain_cache"
-                                   : MapDemo::getInstance().getSelf().getDataDir() / "terrain_cache";
+                                   : CoralMap::getInstance().getSelf().getDataDir() / "terrain_cache";
                 std::filesystem::create_directories(cachePath);
                 MapCacheManager::getInstance().initializeDiskCache(cachePath);
 
@@ -153,4 +153,4 @@ LL_TYPE_INSTANCE_HOOK(
     return result;
 }
 
-} // namespace map_demo
+} // namespace coral_map

@@ -14,7 +14,7 @@
 #include <cstdio>
 
 
-namespace map_demo {
+namespace coral_map {
 
 namespace {
 
@@ -324,4 +324,4 @@ void WorldMapRenderer::render() {
     }
 }
 
-} // namespace map_demo
+} // namespace coral_map

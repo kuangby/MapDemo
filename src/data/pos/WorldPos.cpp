@@ -5,7 +5,7 @@
 #include "RegionPos.h"
 
 
-namespace map_demo {
+namespace coral_map {
 [[nodiscard]] WorldPos::WorldPos(const ChunkPosWithDim& chunkPos, const ChunkWorldPos& chunkWorldPos) noexcept {
     x     = chunkPos.x * 16 + chunkWorldPos.x;
     z     = chunkPos.z * 16 + chunkWorldPos.z;
@@ -21,4 +21,4 @@ namespace map_demo {
     z     = regionPos.z * 256 + chunkPos.z * 16 + chunkWorldPos.z;
     dimId = regionPos.dimId;
 }
-} // namespace map_demo
+} // namespace coral_map

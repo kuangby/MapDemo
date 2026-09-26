@@ -7,7 +7,7 @@
 #include <shared_mutex>
 
 
-namespace map_demo {
+namespace coral_map {
 
 // 大地图 region 缓存数据：256x256 方块的 RGBA 颜色图
 // 由 bake 工作线程在 bake 结束、写回之前生成；渲染线程读取上传纹理
@@ -40,4 +40,4 @@ public:
     }
 };
 
-} // namespace map_demo
+} // namespace coral_map

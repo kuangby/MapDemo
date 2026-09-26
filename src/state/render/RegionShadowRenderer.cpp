@@ -23,7 +23,7 @@
 #include <shared_mutex>
 #include <vector>
 
-namespace map_demo {
+namespace coral_map {
 
 void RegionShadowRenderer::bake(const std::shared_ptr<RegionCacheData>& data) {
     if (!data) return;
@@ -574,4 +574,4 @@ void RegionShadowRenderer::applyStyle2() {
     applyBevel(scale);
 }
 
-} // namespace map_demo
+} // namespace coral_map

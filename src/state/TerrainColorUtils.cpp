@@ -18,7 +18,7 @@
 
 #include <algorithm>
 
-namespace map_demo {
+namespace coral_map {
 
 static BlockColor toBlockColor(mce::Color const& c) {
     auto channel = [](float v) { return static_cast<std::uint8_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -310,4 +310,4 @@ BlockColor getTerrainPixelAtCameraHeight(
     }
 }
 
-} // namespace map_demo
+} // namespace coral_map

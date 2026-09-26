@@ -9,7 +9,7 @@
 #include <limits>
 #include <unordered_set>
 
-namespace map_demo {
+namespace coral_map {
 
 namespace {
 
@@ -244,4 +244,4 @@ void markRingSoftDirty(const ChunkPosWithDim& center) {
     }
 }
 
-} // namespace map_demo
+} // namespace coral_map

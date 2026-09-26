@@ -2,14 +2,14 @@
 
 #include "ll/api/mod/NativeMod.h"
 
-namespace map_demo {
+namespace coral_map {
 
-class MapDemo {
+class CoralMap {
 
 public:
-    static MapDemo& getInstance();
+    static CoralMap& getInstance();
 
-    MapDemo() : mSelf(*ll::mod::NativeMod::current()) {}
+    CoralMap() : mSelf(*ll::mod::NativeMod::current()) {}
 
     [[nodiscard]] ll::mod::NativeMod& getSelf() const { return mSelf; }
 
@@ -23,4 +23,4 @@ private:
     ll::mod::NativeMod& mSelf;
 };
 
-} // namespace map_demo
+} // namespace coral_map

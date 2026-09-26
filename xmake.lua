@@ -13,7 +13,7 @@ if not has_config("vs_runtime") then
     set_runtimes("MD")
 end
 
-target("MapDemo") -- Change this to your mod name.
+target("CoralMap") -- Change this to your mod name.
     add_rules("@levibuildscript/linkrule")
     add_rules("@levibuildscript/modpacker")
     add_packages("levilamina", "imgui", "nlohmann_json")
@@ -45,7 +45,7 @@ target("MapDemo") -- Change this to your mod name.
     add_includedirs("src")
     add_defines("LL_PLAT_C")
 
-    -- 把 resource/（biome_color.json 等数据文件）随 mod 一起输出到 bin/MapDemo/
+    -- 把 resource/（biome_color.json 等数据文件）随 mod 一起输出到 bin/CoralMap/
     after_build(function(target)
         local outputdir = path.join(os.projectdir(), "bin", target:name())
         os.cp(path.join(os.projectdir(), "resource"), path.join(outputdir, "resource"))

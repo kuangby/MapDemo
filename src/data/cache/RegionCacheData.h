@@ -8,7 +8,7 @@
 #include <vector>
 
 
-namespace map_demo {
+namespace coral_map {
 class RegionCacheData {
 private:
     std::array<std::array<std::shared_ptr<ChunkCacheData>, 16>, 16> chunksData;
@@ -109,4 +109,4 @@ public:
         return everBaked;
     }
 };
-} // namespace map_demo
+} // namespace coral_map

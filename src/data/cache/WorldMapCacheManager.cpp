@@ -2,7 +2,7 @@
 
 #include "data/BlockColor.h"
 #include "data/shadowRender/ShadowRenderChunkData.h"
-#include "mod/MapDemo.h"
+#include "mod/CoralMap.h"
 
 #include <mc/client/game/ClientInstance.h>
 #include <mc/client/player/LocalPlayer.h>
@@ -14,7 +14,7 @@
 #include <utility>
 
 
-namespace map_demo {
+namespace coral_map {
 
 WorldMapCacheManager& WorldMapCacheManager::getInstance() {
     static WorldMapCacheManager instance;
@@ -158,7 +158,7 @@ bool WorldMapCacheManager::hasData(const RegionPos& pos) {
 }
 
 void WorldMapCacheManager::onEnterWorld(ClientInstance* clientInstance, LocalPlayer* player) {
-    auto& self = MapDemo::getInstance().getSelf();
+    auto& self = CoralMap::getInstance().getSelf();
 
     std::filesystem::path root;
     if (auto worldDir = self.getWorldDataDir(); worldDir.has_value()) {
@@ -308,4 +308,4 @@ void WorldMapCacheManager::ioWorker() {
     }
 }
 
-} // namespace map_demo
+} // namespace coral_map

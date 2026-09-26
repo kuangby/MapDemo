@@ -7,7 +7,7 @@
 #include <array>
 #include <cstdint>
 
-namespace map_demo {
+namespace coral_map {
 
 inline int clamp255(int v) { return std::clamp(v, 0, 255); }
 
@@ -98,4 +98,4 @@ inline std::array<float, 81> buildBevelTable(int scale) {
     return table;
 }
 
-} // namespace map_demo
+} // namespace coral_map

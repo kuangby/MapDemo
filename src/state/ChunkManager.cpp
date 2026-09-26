@@ -1,6 +1,6 @@
 #include "state/ChunkManager.h"
 
-namespace map_demo {
+namespace coral_map {
 
 ChunkManager& ChunkManager::getInstance() {
     static ChunkManager instance;
@@ -59,4 +59,4 @@ bool ChunkManager::isPointInChunk(float worldX, float worldZ, int chunkX, int ch
     return worldX >= bounds.minX && worldX < bounds.maxX && worldZ >= bounds.minZ && worldZ < bounds.maxZ;
 }
 
-} // namespace map_demo
+} // namespace coral_map

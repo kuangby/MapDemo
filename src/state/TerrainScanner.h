@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace map_demo {
+namespace coral_map {
 
 struct ScanEntry {
     std::uint64_t   nextScanFrame = 0;
@@ -29,9 +29,9 @@ struct ScanEntryCompare {
     }
 };
 
-} // namespace map_demo
+} // namespace coral_map
 
-namespace map_demo {
+namespace coral_map {
 
 // 地形扫描调度器
 // - 以 chunk 为粒度管理扫描任务
@@ -102,4 +102,4 @@ private:
     std::unordered_map<ChunkPosWithDim, std::set<ScanEntry, ScanEntryCompare>::iterator> scanMap_;
 };
 
-} // namespace map_demo
+} // namespace coral_map

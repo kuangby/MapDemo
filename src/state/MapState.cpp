@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace map_demo {
+namespace coral_map {
 
 MapState& MapState::getInstance() {
     static MapState instance;
@@ -79,4 +79,4 @@ void MapState::clearPlayer() {
     velocityYaw_      = 0.0f;
 }
 
-} // namespace map_demo
+} // namespace coral_map

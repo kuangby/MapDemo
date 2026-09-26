@@ -3,10 +3,10 @@
 #include "data/pos/ChunkPosWithDim.h"
 #include "data/pos/ChunkWorldPos.h"
 #include "data/pos/RegionChunkPos.h"
-#include "mod/MapDemo.h"
+#include "mod/CoralMap.h"
 
 
-namespace map_demo {
+namespace coral_map {
 
 MapCacheManager& MapCacheManager::getInstance() {
     static MapCacheManager instance;
@@ -144,9 +144,9 @@ bool MapCacheManager::initializeDiskCache(const std::filesystem::path& path) {
         diskCache_ = std::make_unique<ll::data::KeyValueDB>(path);
         return true;
     } catch (const std::exception& e) {
-        MapDemo::getInstance().getSelf().getLogger().error("MapCacheManager: failed to init disk cache: {}", e.what());
+        CoralMap::getInstance().getSelf().getLogger().error("MapCacheManager: failed to init disk cache: {}", e.what());
         diskCache_ = nullptr;
         return false;
     }
 }
-} // namespace map_demo
+} // namespace coral_map

@@ -13,7 +13,7 @@
 #include <unordered_map>
 
 
-namespace map_demo {
+namespace coral_map {
 class MapCacheManager {
 public:
     static MapCacheManager& getInstance();
@@ -69,4 +69,4 @@ private:
     std::unique_ptr<ll::data::KeyValueDB> diskCache_;
 };
 
-} // namespace map_demo
+} // namespace coral_map

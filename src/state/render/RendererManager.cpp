@@ -10,7 +10,7 @@
 #include <memory>
 #include <mutex>
 
-namespace map_demo {
+namespace coral_map {
 
 RendererManager& RendererManager::getInstance() {
     static RendererManager instance;
@@ -188,4 +188,4 @@ void RendererManager::workerLoop() {
     }
 }
 
-} // namespace map_demo
+} // namespace coral_map

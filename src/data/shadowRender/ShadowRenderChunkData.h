@@ -10,7 +10,7 @@
 #include <array>
 
 
-namespace map_demo {
+namespace coral_map {
 class ShadowRenderChunkData : public ChunkDataBase {
 public:
     std::array<std::array<ShadowRenderBlockData, 16>, 16> blocksData;
@@ -31,4 +31,4 @@ public:
         return blocksData[pos.z][pos.x];
     }
 };
-} // namespace map_demo
+} // namespace coral_map

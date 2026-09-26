@@ -7,7 +7,7 @@
 
 class ClientInstance;
 
-namespace map_demo {
+namespace coral_map {
 
 // 大地图打开时的输入拦截：
 // 通过 ll::event::KeyInputEvent / MouseInputEvent 取消事件，禁用与游戏的交互；
@@ -41,4 +41,4 @@ private:
     static MouseState s_mouse;
 };
 
-} // namespace map_demo
+} // namespace coral_map

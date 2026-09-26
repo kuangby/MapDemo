@@ -1,4 +1,4 @@
-#include "mod/MapDemo.h"
+#include "mod/CoralMap.h"
 
 #include "config/Config.h"
 #include "data/cache/WorldMapCacheManager.h"
@@ -10,14 +10,14 @@
 #include "state/TerrainScanner.h"
 #include "state/render/RendererManager.h"
 
-namespace map_demo {
+namespace coral_map {
 
-MapDemo& MapDemo::getInstance() {
-    static MapDemo instance;
+CoralMap& CoralMap::getInstance() {
+    static CoralMap instance;
     return instance;
 }
 
-bool MapDemo::load() {
+bool CoralMap::load() {
     const auto& logger = getSelf().getLogger();
 
     // load config
@@ -50,12 +50,12 @@ bool MapDemo::load() {
     return true;
 }
 
-bool MapDemo::enable() {
+bool CoralMap::enable() {
     InputBlocker::registerListeners();
     return true;
 }
 
-bool MapDemo::disable() {
+bool CoralMap::disable() {
     InputBlocker::unregisterListeners();
     WorldMapCacheManager::getInstance().shutdown();
     unregisterAllHooks();
@@ -64,6 +64,6 @@ bool MapDemo::disable() {
     return true;
 }
 
-} // namespace map_demo
+} // namespace coral_map
 
-LL_REGISTER_MOD(map_demo::MapDemo, map_demo::MapDemo::getInstance());
+LL_REGISTER_MOD(coral_map::CoralMap, coral_map::CoralMap::getInstance());

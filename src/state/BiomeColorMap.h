@@ -8,7 +8,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace map_demo {
+namespace coral_map {
 
 // 群系虚空底色表：从 resource/biome_color.json 加载各群系的 rgb 代表色，按群系名索引
 // 查询顺序：群系条目 → default 条目；都没有时由调用方回退到游戏内群系草地色采样
@@ -27,4 +27,4 @@ private:
     std::optional<BlockColor>                   defaultColor_;
 };
 
-} // namespace map_demo
+} // namespace coral_map

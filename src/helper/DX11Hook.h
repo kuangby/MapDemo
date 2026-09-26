@@ -21,7 +21,7 @@
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 
-namespace map_demo::DX11Hook {
+namespace coral_map::DX11Hook {
 
 enum class GraphicsAPI {
     Unknown,
@@ -40,4 +40,4 @@ ID3D11DeviceContext* getContext();
 // 游戏窗口句柄（渲染线程读取光标位置用）
 HWND getHwnd();
 
-} // namespace map_demo::DX11Hook
+} // namespace coral_map::DX11Hook

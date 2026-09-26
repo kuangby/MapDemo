@@ -5,7 +5,7 @@
 #include <cstdint>
 
 
-namespace map_demo {
+namespace coral_map {
 class BlockCacheData : public BlockDataBase {
 public:
     BlockColor   bakedColor{0, 0, 0, 0};
@@ -13,4 +13,4 @@ public:
     std::uint8_t waterDepth = 0; // 0 = 无水
     BlockColor   waterSurfaceColor{0, 0, 0, 0};
 };
-} // namespace map_demo
+} // namespace coral_map

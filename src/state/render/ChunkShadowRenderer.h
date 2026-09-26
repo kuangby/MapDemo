@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 
-namespace map_demo {
+namespace coral_map {
 // 区块阴影渲染器：以 chunk 为单位进行阴影烘焙
 class ChunkShadowRenderer {
 public:
@@ -83,4 +83,4 @@ private:
     void applyShadowBlur(int scale);
     void applyBevel(int scale);
 };
-} // namespace map_demo
+} // namespace coral_map

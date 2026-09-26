@@ -10,7 +10,7 @@
 #include <shared_mutex>
 
 
-namespace map_demo {
+namespace coral_map {
 
 class ChunkCacheData : public ChunkDataBase {
 public:
@@ -108,4 +108,4 @@ public:
         return softDirty;
     }
 };
-} // namespace map_demo
+} // namespace coral_map

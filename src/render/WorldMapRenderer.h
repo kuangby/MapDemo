@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 
-namespace map_demo {
+namespace coral_map {
 
 // 大地图渲染器：以 region（256x256 方块）为单位，一张纹理一张图块，ImGui AddImage 拼贴
 class WorldMapRenderer {
@@ -47,4 +47,4 @@ private:
     bool  wasOpen_       = false;
 };
 
-} // namespace map_demo
+} // namespace coral_map

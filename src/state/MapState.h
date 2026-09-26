@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cmath>
 
-namespace map_demo {
+namespace coral_map {
 
 struct PlayerState {
     float x{0.0f};
@@ -63,4 +63,4 @@ private:
     float velocityYaw_{0.0f};
 };
 
-} // namespace map_demo
+} // namespace coral_map

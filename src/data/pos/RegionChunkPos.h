@@ -4,7 +4,7 @@
 #include "WorldPos.h"
 
 
-namespace map_demo {
+namespace coral_map {
 class RegionChunkPos {
 public:
     int x;
@@ -38,4 +38,4 @@ public:
     }
 };
 
-} // namespace map_demo
+} // namespace coral_map
